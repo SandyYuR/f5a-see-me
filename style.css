@@ -1048,6 +1048,23 @@ input[type="checkbox"] {
   border-width: 0 !important;
 }
 
+/* Preview click-to-edit affordance: preview keys open the key editor. */
+#layout-preview .layout-key[data-preview-row],
+#layout-preview .layout-key[data-preview-aux-key] {
+  cursor: pointer;
+}
+
+#layout-preview .layout-key[data-preview-row]:hover,
+#layout-preview .layout-key[data-preview-aux-key]:hover {
+  filter: brightness(1.08);
+}
+
+#layout-preview .layout-key[data-preview-row]:focus-visible,
+#layout-preview .layout-key[data-preview-aux-key]:focus-visible {
+  outline: 2px solid var(--primary, #4f8cff);
+  outline-offset: 1px;
+}
+
 .layout-key.border-shadow {
   border-width: 0 !important;
   box-shadow: inset 0 -1px 0 var(--preview-key-shadow, rgba(0, 0, 0, 0.18));

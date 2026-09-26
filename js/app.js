@@ -3059,7 +3059,8 @@
         const alt = keySubText(key) && punctPlacement !== 'none'
           ? `<span class="layout-key-alt ${punctPlacement === 'bottom' ? 'bottom' : punctPlacement === 'top-center' ? 'top-center' : ''}" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
           : "";
-        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
+        const previewEditTitle = `${key.type || "?"}。点击按键可直接编辑`;
+        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}" data-preview-row="${rowIndex}" data-preview-key="${keyIndex}" tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
       }).join("")}</div></div>`;
     }).join("");
     root.innerHTML = buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg);
@@ -3082,7 +3083,7 @@
       const colors = resolvePreviewColorsForKey(key);
       return `--preview-key-bg:${colors.backgroundCss};color:${colors.textCss};border-color:${colors.borderCss};--preview-key-shadow:${colors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
     };
-    const chipOf = (key) => `<div class="layout-key-slot" style="--key-width:0%"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyleOf(key))}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span></div></div>`;
+    const chipOf = (key, auxIndex) => `<div class="layout-key-slot" style="--key-width:0%"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyleOf(key))}" data-preview-aux-key="${auxIndex}" tabindex="0" role="button" title="${escapeAttr(`${key.type || "?"}。点击按键可直接编辑`)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span></div></div>`;
     const auxKeysHtml = auxBarKeys.length
       ? `<div class="keys aux-bar-keys">${auxBarKeys.map(chipOf).join("")}</div>`
       : `<div class="aux-bar-placeholder">辅助选择栏（无按键，运行时显示候选标签页）</div>`;
@@ -3104,6 +3105,59 @@
       return `<div class="aux-bar-hwrap"><div class="aux-bar-main">${rowsHtml}</div><div class="aux-bar-vwrap aux-bar-right-v">${auxHtml}</div></div>`;
     }
     return rowsHtml;
+  }
+
+  // Preview click-to-edit: open the existing key editor dialog for the
+  // preview key under the pointer. Runs once via delegation on
+  // #layout-preview, so re-renders (innerHTML) never duplicate listeners.
+  // Note: unlike the row-editor chips (which open on touch pointerup and
+  // must swallow the trailing compat click via layoutKeyDialogTouchOpenUntil),
+  // preview opens synchronously inside the click itself, so no compat click
+  // follows and the guard must NOT be armed — otherwise the user's first
+  // real click inside the dialog would be eaten on desktop.
+  function openPreviewKeyEditor(target) {
+    if (!target || typeof openKeyEditorDialog !== "function") return false;
+    const auxAttr = target.getAttribute("data-preview-aux-key");
+    if (auxAttr !== null && auxAttr !== "") {
+      const auxIndex = Number(auxAttr);
+      if (!Number.isInteger(auxIndex) || auxIndex < 0 || auxIndex >= getAuxBarKeys().length) return false;
+      openKeyEditorDialog(-1, -1, false, auxIndex);
+      return true;
+    }
+    const rowAttr = target.getAttribute("data-preview-row");
+    const keyAttr = target.getAttribute("data-preview-key");
+    if (rowAttr === null || keyAttr === null || rowAttr === "" || keyAttr === "") return false;
+    const rowIndex = Number(rowAttr);
+    const keyIndex = Number(keyAttr);
+    const rows = getRows();
+    if (!Number.isInteger(rowIndex) || !Number.isInteger(keyIndex)) return false;
+    if (!rows[rowIndex] || keyIndex < 0 || keyIndex >= rows[rowIndex].length) return false;
+    openKeyEditorDialog(rowIndex, keyIndex, false);
+    return true;
+  }
+
+  let previewKeyEditingBound = false;
+  function initPreviewKeyEditing() {
+    if (previewKeyEditingBound) return;
+    const root = el("layout-preview");
+    if (!root) return;
+    previewKeyEditingBound = true;
+    root.addEventListener("click", (ev) => {
+      if (ev.defaultPrevented) return;
+      if (typeof el === "function" && el("layout-key-dialog")?.open) return;
+      const target = ev.target?.closest?.("[data-preview-row][data-preview-key], [data-preview-aux-key]");
+      if (!target || !root.contains(target)) return;
+      if (ev.detail !== 0 && !isPointInsideElement(ev.clientX, ev.clientY, target)) return;
+      openPreviewKeyEditor(target);
+    });
+    root.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      const target = ev.target?.closest?.("[data-preview-row][data-preview-key], [data-preview-aux-key]");
+      if (!target || !root.contains(target)) return;
+      if (typeof el === "function" && el("layout-key-dialog")?.open) return;
+      ev.preventDefault();
+      openPreviewKeyEditor(target);
+    });
   }
 
   function pinPreviewContainerWidth() {
@@ -9160,6 +9214,7 @@
     installThemeCropInteractions();
     initTabs();
     initLayoutTab();
+    initPreviewKeyEditing();
     initThemeTab();
     initPopupTab();
     initIconThemeTab();
