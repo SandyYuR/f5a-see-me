@@ -101,12 +101,29 @@
     { label: "=", sym: "KP_Equal" }
   ];
 
+  // 三个符号面板的层目标名，与 app 内 PickerWindow.Key.layerTargetNames 一致。
+  // 它们是合法的「切层」目标（运行时由 KeyboardWindow 路由到对应窗口），
+  // 但不是布局里的层，所以不会出现在 allEntryKeys() 里，必须显式并入候选与校验白名单。
+  const pickerLayerTargets = ["Symbol", "Emoji", "Kaomoji"];
+  // 颜文字面板改名前叫 Emoticon，该名字已写进存量用户的 subLabel / 宏 target。
+  // app 侧 Key.ofName 仍接受它，编辑器也必须继续认，否则打开旧布局时下拉会显示成
+  // 未知目标（value 不在选项里就回落成「默认」），看上去像配置丢了。
+  const pickerLegacyLayerTargets = ["Emoticon"];
+  const pickerLayerTargetLabels = {
+    Symbol: "Symbol（符号面板）",
+    Emoji: "Emoji（表情面板）",
+    Kaomoji: "Kaomoji（颜文字面板）",
+    Emoticon: "Kaomoji（颜文字面板）"
+  };
+
   // LayoutSwitchKey 切换目标（存于 subLabel），与 app 内 SWITCH_TARGET_OPTIONS 一致。
   const switchTargetOptions = [
     { value: "", label: "默认（?123 符号面板）" },
     { value: "Text", label: "Text（文本键盘）" },
     { value: "Number", label: "Number（数字键盘）" },
-    { value: "Symbol", label: "Symbol（符号面板）" }
+    { value: "Symbol", label: "Symbol（符号面板）" },
+    { value: "Emoji", label: "Emoji（表情面板）" },
+    { value: "Kaomoji", label: "Kaomoji（颜文字面板）" }
   ];
 
   // 数字键盘 keysym 与规范键名双向表（与 app 的 SYM_CODE_TO_NAME / SYM_NAME_TO_CODE 一致）
@@ -4277,11 +4294,19 @@
     const symName = resolveNumpadSymName(key.sym ?? key.label) || "KP_0";
     numpadSel.value = numpadSymOptions.some((o) => o.sym === symName) ? symName : "KP_0";
     const targetSel = el("layout-key-switch-target");
-    targetSel.innerHTML = switchTargetOptions
+    // 存量配置的 subLabel 可能是已不存在的旧目标名（如颜文字面板改名前的 Emoticon）。
+    // 若该值不在预设选项里，必须把它作为一个选项补进去，否则 <select> 会回落成
+    // 「默认」，用户一保存就把配置悄悄改掉了（等于静默丢数据）。
+    // app 侧 createSwitchTargetSpinner 同样会追加当前值。
+    const currentSubLabel = key.subLabel || "";
+    const switchTargetsForDialog = switchTargetOptions.some((o) => o.value === currentSubLabel)
+      ? switchTargetOptions
+      : [...switchTargetOptions, { value: currentSubLabel, label: `${currentSubLabel}（未知目标，保留原值）` }];
+    targetSel.innerHTML = switchTargetsForDialog
       .map((o) => `<option value="${escapeAttr(o.value)}">${escapeHtml(o.label)}</option>`)
       .join("");
-    targetSel.value = switchTargetOptions.some((o) => o.value === (key.subLabel || ""))
-      ? (key.subLabel || "") : "";
+    targetSel.value = switchTargetsForDialog.some((o) => o.value === currentSubLabel)
+      ? currentSubLabel : "";
     updateKeyDialogFieldVisibility(type);
     syncComposeInlineUi();
     refreshKeyDialogSummaries();
@@ -4878,8 +4903,11 @@
       mode.value = normalizeLayerMode(step.keys?.[0]?.code);
       const target = document.createElement("select");
       target.className = "macro-chip-select";
-      const targets = Array.from(new Set([step.text, ...allEntryKeys()].filter(Boolean)));
-      target.innerHTML = targets.map((v) => `<option value="${escapeAttr(v)}">${escapeHtml(v)}</option>`).join("");
+      // 三个符号面板（Symbol / Emoji / Kaomoji）也是合法目标，但它们不是布局里的层，
+      // 不在 allEntryKeys() 里，必须显式并入候选（与 app 内 MacroEditorActivity 一致）。
+      // 存量配置里可能存着旧名 Emoticon：靠下面的 step.text 一并入列，无需再列出来。
+      const targets = Array.from(new Set([step.text, ...allEntryKeys(), ...pickerLayerTargets].filter(Boolean)));
+      target.innerHTML = targets.map((v) => `<option value="${escapeAttr(v)}">${escapeHtml(pickerLayerTargetLabels[v] || v)}</option>`).join("");
       if (targets.length) target.value = targets.includes(step.text) ? step.text : targets[0];
       step.keys = [{ keyType: "fcitx", code: mode.value }];
       step.text = target.value || "";
@@ -5084,7 +5112,10 @@
       if (step.type === "app" && !keys.length) return `步骤 ${n} 需要一个应用动作`;
       if (step.type === "layer") {
         if (!step.text.trim()) return `步骤 ${n} 需要填写目标布局`;
-        const targets = allEntryKeys();
+        // 白名单 = 布局里的层 + 三个符号面板（后者运行时路由到独立窗口）+ 旧名 Emoticon
+        // （存量配置的 target 就写着它，app 侧 Key.ofName 仍接受，这里也必须放行，
+        //  否则用户一打开旧宏就会被判成「目标布局无效」而存不回去）
+        const targets = [...allEntryKeys(), ...pickerLayerTargets, ...pickerLegacyLayerTargets];
         if (targets.length && !targets.includes(step.text)) return `步骤 ${n} 的目标布局无效`;
       }
     }
