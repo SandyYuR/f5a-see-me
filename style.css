@@ -12,6 +12,9 @@ details.card,
   --bg: #0f1115;
   --panel: #171a21;
   --panel-2: #1d2230;
+  --panel-inner: #10131b;
+  --panel-soft: #151923;
+  --panel-deep: #11151d;
   --text: #e8ebf2;
   --sub: #9aa4ba;
   --primary: #4f8cff;
@@ -19,6 +22,7 @@ details.card,
   --border: #2a3142;
   --ok: #4cc38a;
   --err: #ff6b6b;
+  --color-scheme: dark;
   --topbar-height: 72px;
   --preview-panel-height: clamp(140px, 22vh, 220px);
   --preview-zoom: 1;
@@ -161,7 +165,7 @@ summary {
   left: 0;
   right: 0;
   z-index: 9;
-  background: #11151d;
+  background: var(--panel-deep);
   border-bottom: 1px solid var(--border);
   padding: 10px 20px 8px;
 }
@@ -217,18 +221,18 @@ summary {
   border-radius: 0;
   border-left: 0;
   border-right: 0;
-  background: #10131b;
+  background: var(--panel-inner);
   color: var(--text);
-  color-scheme: dark;
+  color-scheme: var(--color-scheme);
 }
 
 .spinner-strip select:disabled {
   color: var(--sub);
-  background: #151923;
+  background: var(--panel-soft);
 }
 
 .spinner-strip select option {
-  background: #10131b;
+  background: var(--panel-inner);
   color: var(--text);
 }
 
@@ -270,16 +274,16 @@ button:disabled {
 
 input, select, textarea {
   width: 100%;
-  background: #10131b;
+  background: var(--panel-inner);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px;
-  color-scheme: dark;
+  color-scheme: var(--color-scheme);
 }
 
 select option {
-  background: #10131b;
+  background: var(--panel-inner);
   color: var(--text);
 }
 
@@ -339,7 +343,7 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
-  background: #10131b;
+  background: var(--panel-inner);
   width: 100%;
   min-width: 0;
 }
@@ -449,7 +453,7 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background-color: #10131b;
+  background-color: var(--panel-inner);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -511,7 +515,7 @@ input[type="checkbox"] {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #10131b;
+  background: var(--panel-inner);
   display: grid;
   place-items: center;
   touch-action: none;
@@ -550,7 +554,7 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px;
-  background: #10131b;
+  background: var(--panel-inner);
   text-align: left;
 }
 
@@ -674,7 +678,7 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
-  background: #10131b;
+  background: var(--panel-inner);
 }
 
 .theme-color-row > label {
@@ -748,7 +752,7 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px 8px;
-  background: #10131b;
+  background: var(--panel-inner);
 }
 
 .theme-preview-mobile-card > summary {
@@ -829,7 +833,7 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background: #10131b;
+  background: var(--panel-inner);
   font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
@@ -996,7 +1000,7 @@ input[type="checkbox"] {
   padding: 10px;
   padding-top: calc(10px + var(--preview-top-bar-height, 0px));
   padding-bottom: calc(10px + var(--preview-bottom-padding, 0px));
-  background-color: #10131b;
+  background-color: var(--panel-inner);
   max-width: 760px;
   margin: 0 auto;
   --preview-row-gap: 8px;
@@ -2061,7 +2065,7 @@ input[type="checkbox"] {
   height: 48px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #10131b;
+  background: var(--panel-inner);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2091,7 +2095,7 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px;
-  background: #10131b;
+  background: var(--panel-inner);
   text-align: left;
   cursor: pointer;
 }
@@ -2145,4 +2149,370 @@ input[type="checkbox"] {
   font-size: 11px;
   color: var(--sub);
   margin-top: 2px;
+}
+
+/* ── 站点亮/暗主题（借鉴 foxy-see-me）────────────────────────
+ * html 根元素挂 site-auto / site-light / site-dark 三态类；
+ * 亮色调色板覆盖同一组变量，auto 跟随系统偏好。
+ * 少数硬编码深色的组件在下方补丁区单独适配。 */
+html.site-light {
+  --bg: #f3f5fa;
+  --panel: #ffffff;
+  --panel-2: #eef1f8;
+  --panel-inner: #ffffff;
+  --panel-soft: #eef1f8;
+  --panel-deep: #e9edf5;
+  --text: #1d2434;
+  --sub: #5c6577;
+  --primary: #2f6bff;
+  --macro: #2e8f63;
+  --border: #d7dce8;
+  --ok: #1f9d63;
+  --err: #d64545;
+  --color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  html.site-auto {
+    --bg: #f3f5fa;
+    --panel: #ffffff;
+    --panel-2: #eef1f8;
+    --panel-inner: #ffffff;
+    --panel-soft: #eef1f8;
+    --panel-deep: #e9edf5;
+    --text: #1d2434;
+    --sub: #5c6577;
+    --primary: #2f6bff;
+    --macro: #2e8f63;
+    --border: #d7dce8;
+    --ok: #1f9d63;
+    --err: #d64545;
+    --color-scheme: light;
+  }
+}
+
+/* 弹出字符卡片等硬编码深色的补丁 */
+html.site-light .popup-entry-key {
+  border-color: #9db4ff;
+  background: #e4ebff;
+  color: #1d2434;
+  box-shadow: 0 1px 4px 0 rgba(47, 107, 255, 0.10), inset 0 -1px 0 rgba(0, 0, 0, .06);
+}
+
+html.site-light .popup-chip {
+  border-color: #c9d1e2;
+  background: #f2f4fa;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .06);
+}
+
+html.site-light .popup-chip-add {
+  background: #e4ebff;
+}
+
+html.site-light .popup-entry-delete {
+  border-color: #e3a1a1;
+  background: #fbeaea;
+  color: #8f2020;
+}
+
+@media (prefers-color-scheme: light) {
+  html.site-auto .popup-entry-key { border-color: #9db4ff; background: #e4ebff; color: #1d2434; box-shadow: 0 1px 4px 0 rgba(47, 107, 255, 0.10), inset 0 -1px 0 rgba(0, 0, 0, .06); }
+  html.site-auto .popup-chip { border-color: #c9d1e2; background: #f2f4fa; box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .06); }
+  html.site-auto .popup-chip-add { background: #e4ebff; }
+  html.site-auto .popup-entry-delete { border-color: #e3a1a1; background: #fbeaea; color: #8f2020; }
+}
+
+/* ── 顶栏动作区 ────────────────────────────────────────── */
+.topbar-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+.topbar-title {
+  min-width: 0;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+  padding-top: 4px;
+}
+
+.topbar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+.mini-button {
+  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 1.2;
+  border-radius: 6px;
+}
+
+.mini-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.site-theme-group {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.site-theme-btn.active {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ── 悬浮工具（撤销/重做 + 回到顶部）────────────────────── */
+.float-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+}
+
+.float-layer > * {
+  pointer-events: auto;
+}
+
+.float-group {
+  position: fixed;
+  right: 18px;
+  bottom: 70px;
+  display: flex;
+  gap: 6px;
+}
+
+.float-bottom-right {
+  position: fixed;
+  right: 18px;
+  bottom: 22px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+}
+
+.float-bottom-right:hover {
+  filter: brightness(1.1);
+}
+
+/* ── 预览工具条（借鉴 foxy-see-me 的 preview-toolbar）──── */
+.preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 2px 0 6px;
+  font-size: 12px;
+  color: var(--sub);
+}
+
+.preview-toolbar .pt-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.preview-toolbar input[type="range"] {
+  width: 110px;
+  padding: 0;
+}
+
+.preview-toolbar .num-input {
+  width: 58px;
+  padding: 3px 5px;
+  border-radius: 6px;
+}
+
+.preview-toolbar .pt-unit {
+  color: var(--sub);
+  margin-left: -2px;
+}
+
+.preview-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.preview-toolbar-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+
+/* ── JSON 校验面板（借鉴 foxy-see-me 的 json-issues）────── */
+.json-issues {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin: 6px 0;
+  font-size: 12.5px;
+  font-weight: 400;
+  display: none;
+}
+
+.json-issues.show {
+  display: block;
+}
+
+.json-issues.warn {
+  border-left: 3px solid #e0a34c;
+  background: rgba(224, 163, 76, 0.08);
+}
+
+.json-issues.error {
+  border-left: 3px solid var(--err);
+  background: rgba(255, 107, 107, 0.08);
+}
+
+.json-issues.ok {
+  border-left: 3px solid var(--ok);
+  background: rgba(76, 195, 138, 0.08);
+}
+
+.json-issues .json-issue-line {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.json-issues .json-issue-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.json-issues .json-issue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.json-issues button {
+  padding: 3px 9px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.json-issue-locatable {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.json-issue-locatable:hover {
+  color: var(--primary);
+}
+
+/* ── 预览按键：按压反馈 / 徽章 / 滑动提示 ───────────────── */
+.layout-key {
+  position: relative;
+  transition: filter 0.06s ease;
+}
+
+.layout-key:active {
+  filter: brightness(1.12);
+}
+
+/* 按压时以主题 keyPressHighlightColor 作为整键覆盖层（颜色自带透明度） */
+.layout-key.pressed {
+  filter: none;
+  box-shadow: inset 0 0 0 999px var(--preview-key-press, rgba(127, 127, 127, 0.25));
+}
+
+.key-badge {
+  position: absolute;
+  top: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.key-badge-lp {
+  right: 5px;
+  background: #4f8cff;
+}
+
+.key-badge-macro {
+  left: 5px;
+  background: #35c26e;
+}
+
+.layout-key-hint {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  font-size: 10px;
+  line-height: 1.1;
+  opacity: 0.72;
+  pointer-events: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-key-main {
+  pointer-events: none;
+}
+
+.layout-key-alt {
+  pointer-events: none;
+}
+
+.layout-key-blur-mask,
+.layout-key-blur-tint {
+  pointer-events: none;
+}
+
+/* 亮色模式补丁：硬编码深色的行编辑器按键芯片等 */
+html.site-light .layout-chip {
+  background: #eef1f8;
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .06);
+}
+
+html.site-light .layout-chip.dragging,
+html.site-light .layout-chip.drop-target {
+  background: #e2e8f4;
+}
+
+@media (prefers-color-scheme: light) {
+  html.site-auto .layout-chip { background: #eef1f8; box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .06); }
+  html.site-auto .layout-chip.dragging,
+  html.site-auto .layout-chip.drop-target { background: #e2e8f4; }
+}
+
+html.site-light .layout-chip.alt-key {
+  background: #e6eaf4;
+  color: #5c6577;
+}
+
+html.site-light .layout-chip.space-key {
+  background: #dde3ef;
+}
+
+html.site-light .layout-chip.compose-key {
+  color: #2e8f63;
+}
+
+@media (prefers-color-scheme: light) {
+  html.site-auto .layout-chip.alt-key { background: #e6eaf4; color: #5c6577; }
+  html.site-auto .layout-chip.space-key { background: #dde3ef; }
+  html.site-auto .layout-chip.compose-key { color: #2e8f63; }
 }

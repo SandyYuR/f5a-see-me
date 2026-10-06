@@ -1,7 +1,21 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-10-06T00:00+08:00";
+  const WEB_EDITOR_BUILD = "2026-10-07T00:00+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
+
+  // ── 站点亮/暗主题（借鉴 foxy-see-me）：在首次渲染前应用，避免闪色 ──
+  const SITE_THEME_KEY = "f5a-editor-site-theme";
+  function applySiteThemeClass(mode) {
+    const root = document.documentElement;
+    root.classList.remove("site-auto", "site-light", "site-dark");
+    root.classList.add(mode === "light" || mode === "dark" ? `site-${mode}` : "site-auto");
+  }
+  try {
+    const saved = localStorage.getItem(SITE_THEME_KEY);
+    applySiteThemeClass(saved === "light" || saved === "dark" || saved === "auto" ? saved : "auto");
+  } catch (_) {
+    applySiteThemeClass("auto");
+  }
 
   const MAGIC = "F5AQR1";
   const MAX_CHUNK_BYTES = 1024;
@@ -928,6 +942,8 @@
     }
     root.style.backgroundRepeat = "no-repeat";
     root.style.borderColor = argbToCss(resolveThemeTokenColor("dividerColor"));
+    // 按压反馈色：直接采用主题的 keyPressHighlightColor（通常自带透明度，作为覆盖层）
+    root.style.setProperty("--preview-key-press", argbToCss(resolveThemeTokenColor("keyPressHighlightColor")));
   }
 
   function createBuiltinThemeCatalog() {
@@ -1714,6 +1730,7 @@
 
   function applyPopupJsonEditorInput() {
     if (state.suppressPopupJsonInput) return;
+    scheduleJsonCheck("popup");
     try {
       const parsed = normalizePopupEntries(JSON.parse(getPopupJsonText() || "{}"));
       state.popupEntries = parsed;
@@ -3246,8 +3263,15 @@
         const alt = keySubText(key) && punctPlacement !== 'none'
           ? `<span class="layout-key-alt ${punctPlacement === 'bottom' ? 'bottom' : punctPlacement === 'top-center' ? 'top-center' : ''}" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
           : "";
+        let hint = "";
+        if (state.previewShowHints !== false && typeof key.swipeLabel === "string" && key.swipeLabel.trim()) {
+          hint = `<span class="layout-key-hint">${escapeHtml(key.swipeLabel.trim())}</span>`;
+        }
+        let badges = "";
+        if (key.longPress) badges += `<span class="key-badge key-badge-lp" title="长按事件"></span>`;
+        if (key.tap) badges += `<span class="key-badge key-badge-macro" title="含宏动作"></span>`;
         const previewEditTitle = `${key.type || "?"}。点击按键可直接编辑`;
-        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}" data-preview-row="${rowIndex}" data-preview-key="${keyIndex}" tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}</div></div>`;
+        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}" data-preview-row="${rowIndex}" data-preview-key="${keyIndex}" tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}${hint}${badges}</div></div>`;
       }).join("")}</div></div>`;
     }).join("");
     root.innerHTML = buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg);
@@ -6534,6 +6558,7 @@
 
   function applyThemeJsonEditorInput() {
     if (state.suppressThemeJsonInput) return;
+    scheduleJsonCheck("theme");
     const theme = currentThemeEntry();
     if (!theme || theme.builtin) {
       setStatus("theme-json-status", "内置主题不可直接编辑，请先复制为自定义主题", "err");
@@ -6567,6 +6592,7 @@
 
   function applyLayoutJsonEditorInput() {
     if (state.suppressLayoutJsonInput) return;
+    scheduleJsonCheck("layout");
     try {
       state.layout = normalizeLayoutObject(JSON.parse(getLayoutJsonText()));
       ensureSelection();
@@ -9620,6 +9646,540 @@
     state.initialIconThemeCatalogSignature = iconThemeCatalogSignature();
   }
 
+  // ════════════════════════════════════════════════════════════════
+  // 便捷功能（借鉴 foxy-see-me）：站点主题切换 / 撤销重做 / 回到顶部 /
+  // 预览工具条 / JSON 实时校验 / 草稿自动保存
+  // ════════════════════════════════════════════════════════════════
+
+  // ── 站点亮/暗主题三态切换 ──
+  function setSiteTheme(mode) {
+    try { localStorage.setItem(SITE_THEME_KEY, mode); } catch (_) {}
+    applySiteThemeClass(mode);
+    document.querySelectorAll(".site-theme-btn").forEach((btn) => {
+      const active = btn.dataset.siteTheme === mode;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+
+  function setupSiteThemeToggle() {
+    let saved = "auto";
+    try { saved = localStorage.getItem(SITE_THEME_KEY) || "auto"; } catch (_) {}
+    if (!["auto", "light", "dark"].includes(saved)) saved = "auto";
+    document.querySelectorAll(".site-theme-btn").forEach((btn) => {
+      btn.addEventListener("click", () => setSiteTheme(btn.dataset.siteTheme));
+    });
+    setSiteTheme(saved);
+  }
+
+  // ── 撤销/重做 + 草稿自动保存 ──
+  // 采用"签名比对"而非在每个改动点埋点：定时比对全部文档的 JSON 快照，
+  // 变化则把上一份快照压入撤销栈。粒度由轮询间隔决定，可覆盖所有改动入口。
+  const HISTORY_LIMIT = 100;
+  const WATCH_INTERVAL_MS = 800;
+  const DRAFT_KEY = "f5a-editor-draft-v1";
+  const history = { undoStack: [], redoStack: [], lastCommitted: "", restoring: false };
+
+  function currentHistorySnapshot() {
+    try {
+      return JSON.stringify({
+        layout: state.layout || {},
+        popup: state.popupEntries || {},
+        themes: (state.themeCatalog || []).map((t) => ({
+          id: t.id, name: t.name, builtin: !!t.builtin, isDark: !!t.isDark,
+          colors: t.colors, backgroundImage: t.backgroundImage && String(t.backgroundImage).startsWith("blob:") ? "" : t.backgroundImage,
+          backgroundImageObject: stripDraftBackgroundObject(t.backgroundImageObject),
+          imeOriginalName: t.imeOriginalName || ""
+        })),
+        selectedThemeId: state.selectedThemeId,
+        iconThemes: (state.iconThemeCatalog || []).map((t) => ({
+          id: t.id, name: t.name, author: t.author || "", version: t.version || 1, builtin: !!t.builtin, icons: t.icons
+        })),
+        selectedIconThemeId: state.selectedIconThemeId,
+        selectedBase: state.selectedBase,
+        selectedSubmode: state.selectedSubmode
+      });
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function stripDraftBackgroundObject(obj) {
+    // blob: URL 刷新后失效，草稿/历史里只保留元数据，图片数据由 IME/ZIP 重新提供
+    if (!obj || typeof obj !== "object") return null;
+    const clone = deepClone(obj);
+    delete clone.imageWidthHint;
+    delete clone.imageHeightHint;
+    return clone;
+  }
+
+  function updateUndoButtons() {
+    const canUndo = history.undoStack.length > 0;
+    const canRedo = history.redoStack.length > 0;
+    [["top-undo", canUndo, `撤销 (Ctrl+Z)`], ["top-redo", canRedo, `重做 (Ctrl+Y)`],
+     ["float-undo", canUndo, `撤销 (Ctrl+Z)`], ["float-redo", canRedo, `重做 (Ctrl+Y)`]]
+      .forEach(([id, enabled, title]) => {
+        const btn = el(id);
+        if (!btn) return;
+        btn.disabled = !enabled;
+        btn.title = enabled
+          ? title
+          : (id.endsWith("undo") ? `没有可撤销的操作 (Ctrl+Z)` : `没有可重做的操作 (Ctrl+Y)`);
+      });
+  }
+
+  function restoreSnapshot(raw) {
+    let snap;
+    try { snap = JSON.parse(raw); } catch (_) { return false; }
+    if (!snap || typeof snap !== "object") return false;
+    history.restoring = true;
+    try {
+      state.layout = snap.layout && typeof snap.layout === "object" ? snap.layout : state.layout;
+      if (snap.selectedBase && state.layout[snap.selectedBase]) {
+        state.selectedBase = snap.selectedBase;
+        state.selectedSubmode = snap.selectedSubmode && !isRows(state.layout[snap.selectedBase]) && state.layout[snap.selectedBase][snap.selectedSubmode]
+          ? snap.selectedSubmode
+          : submodeNames(state.selectedBase)[0] || DEFAULT_SUBMODE;
+      }
+      if (snap.popup && typeof snap.popup === "object") state.popupEntries = snap.popup;
+      if (Array.isArray(snap.themes)) {
+        state.themeCatalog = snap.themes.map((t) => ({
+          ...t,
+          backgroundImage: t.backgroundImage || "",
+          backgroundImageObject: t.backgroundImageObject || null
+        }));
+        state.selectedThemeId = state.themeCatalog.some((t) => t.id === snap.selectedThemeId)
+          ? snap.selectedThemeId
+          : state.themeCatalog[0]?.id || state.selectedThemeId;
+      }
+      if (Array.isArray(snap.iconThemes)) {
+        state.iconThemeCatalog = snap.iconThemes.map((t) => ({ ...t, thumbnailSvg: t.thumbnailSvg || null }));
+        state.selectedIconThemeId = state.iconThemeCatalog.some((t) => t.id === snap.selectedIconThemeId)
+          ? snap.selectedIconThemeId
+          : state.iconThemeCatalog[0]?.id || state.selectedIconThemeId;
+      }
+      syncLayoutUiFromState();
+      renderThemeList();
+      renderThemeEditor();
+      syncThemeJsonFromState();
+      renderPopupEditor();
+      syncPopupJsonFromState();
+      renderIconThemeEditor();
+      syncIconThemeJsonFromState();
+      syncPreviewToolbarUi();
+    } finally {
+      history.restoring = false;
+    }
+    return true;
+  }
+
+  function undo() {
+    if (!history.undoStack.length) return;
+    const current = history.lastCommitted || currentHistorySnapshot();
+    const target = history.undoStack.pop();
+    history.redoStack.push(current);
+    if (restoreSnapshot(target)) {
+      history.lastCommitted = target;
+      setStatus("layout-json-status", "已撤销上一次修改", "ok");
+    }
+    updateUndoButtons();
+  }
+
+  function redo() {
+    if (!history.redoStack.length) return;
+    const current = history.lastCommitted || currentHistorySnapshot();
+    const target = history.redoStack.pop();
+    history.undoStack.push(current);
+    if (restoreSnapshot(target)) {
+      history.lastCommitted = target;
+      setStatus("layout-json-status", "已重做", "ok");
+    }
+    updateUndoButtons();
+  }
+
+  function saveDraftNow() {
+    try {
+      localStorage.setItem(DRAFT_KEY, history.lastCommitted || currentHistorySnapshot());
+    } catch (_) {
+      // localStorage 配额不足（多为图标主题内嵌 data: 图标过大），降级为不保存图标主题
+      try {
+        const snap = JSON.parse(currentHistorySnapshot());
+        delete snap.iconThemes;
+        snap.selectedIconThemeId = undefined;
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(snap));
+      } catch (_) { /* 草稿保存失败可忽略 */ }
+    }
+  }
+
+  function restoreDraftFromStorage() {
+    let raw = "";
+    try { raw = localStorage.getItem(DRAFT_KEY) || ""; } catch (_) { return false; }
+    if (!raw) return false;
+    let snap;
+    try { snap = JSON.parse(raw); } catch (_) { return false; }
+    if (!snap || typeof snap !== "object") return false;
+    // 仅当草稿包含至少一份用户文档时才恢复，避免空草稿覆盖内置初始数据
+    const hasContent = (snap.layout && Object.keys(snap.layout).length) || (Array.isArray(snap.themes) && snap.themes.some((t) => !t.builtin));
+    if (!hasContent) return false;
+    const ok = restoreSnapshot(raw);
+    if (ok) {
+      history.lastCommitted = currentHistorySnapshot();
+      setStatus("layout-json-status", "已恢复上次浏览器草稿（连接 IME 后将以 IME 数据为准）", "ok");
+    }
+    return ok;
+  }
+
+  function beginHistoryTracking() {
+    history.lastCommitted = currentHistorySnapshot();
+    updateUndoButtons();
+    setInterval(() => {
+      if (history.restoring) return;
+      const snap = currentHistorySnapshot();
+      if (!snap || snap === history.lastCommitted) return;
+      history.undoStack.push(history.lastCommitted);
+      if (history.undoStack.length > HISTORY_LIMIT) history.undoStack.shift();
+      history.redoStack = [];
+      history.lastCommitted = snap;
+      updateUndoButtons();
+      saveDraftNow();
+    }, WATCH_INTERVAL_MS);
+  }
+
+  function setupUndoRedo() {
+    [["top-undo", undo], ["top-redo", redo], ["float-undo", undo], ["float-redo", redo]]
+      .forEach(([id, fn]) => el(id)?.addEventListener("click", fn));
+    document.addEventListener("keydown", (event) => {
+      const target = event.target;
+      const inField = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable);
+      if (inField) return;
+      if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+        const key = event.key.toLowerCase();
+        if (key === "z" && !event.shiftKey) { event.preventDefault(); undo(); return; }
+        if (key === "y" || (key === "z" && event.shiftKey)) { event.preventDefault(); redo(); }
+      }
+    });
+  }
+
+  // ── 悬浮工具：回到顶部（滚动超过固定顶栏+预览区后出现）──
+  const FLOAT_SHOW_AT = 200;
+  function updateFloatTools() {
+    const show = window.scrollY > FLOAT_SHOW_AT;
+    const topBtn = el("float-top");
+    if (topBtn) topBtn.hidden = !show;
+    const undoGroup = el("float-undo-group");
+    if (undoGroup) undoGroup.hidden = !show;
+  }
+
+  function setupFloatTools() {
+    el("float-top")?.addEventListener("click", () => {
+      window.scrollTo(0, 0);
+      updateFloatTools();
+    });
+    window.addEventListener("scroll", updateFloatTools, { passive: true });
+    updateFloatTools();
+  }
+
+  // ── 预览工具条（高度/圆角/间距/边框/提示）──
+  const PREVIEW_HINTS_KEY = "f5a-editor-preview-hints";
+  function syncPreviewToolbarUi() {
+    const height = el("pt-height");
+    if (height) height.value = getHeightOverride();
+    const corner = el("pt-corner");
+    if (corner) corner.value = state.themeAppSync.keyRadius;
+    const gapH = el("pt-gap-h");
+    if (gapH) gapH.value = state.themeAppSync.keyHGap;
+    const gapV = el("pt-gap-v");
+    if (gapV) gapV.value = state.themeAppSync.keyVGap;
+    const border = el("pt-border");
+    if (border) border.checked = !!state.themeAppSync.borderEnabled;
+    const stroke = el("pt-stroke");
+    if (stroke) {
+      stroke.checked = !!state.themeAppSync.borderOutline;
+      stroke.disabled = !state.themeAppSync.borderEnabled;
+    }
+    const hints = el("pt-hints");
+    if (hints) {
+      let showHints = true;
+      try { showHints = localStorage.getItem(PREVIEW_HINTS_KEY) !== "0"; } catch (_) {}
+      hints.checked = showHints;
+    }
+  }
+
+  function setupPreviewToolbar() {
+    el("pt-height")?.addEventListener("change", (e) => {
+      try {
+        setHeightOverride(state.selectedBase, state.selectedSubmode, e.target.value);
+        syncLayoutUiFromState();
+      } catch (err) { alert(err.message); }
+      syncPreviewToolbarUi();
+    });
+    const geom = [
+      ["pt-corner", "keyRadius"], ["pt-gap-h", "keyHGap"], ["pt-gap-v", "keyVGap"]
+    ];
+    geom.forEach(([id, prop]) => {
+      el(id)?.addEventListener("change", (e) => {
+        const n = Math.max(0, Number(e.target.value) || 0);
+        state.themeAppSync[prop] = n;
+        syncThemeAppSyncUiFromState();
+        renderLayoutPreview();
+      });
+    });
+    el("pt-border")?.addEventListener("change", (e) => {
+      state.themeAppSync.borderEnabled = !!e.target.checked;
+      if (!e.target.checked) state.themeAppSync.borderOutline = false;
+      syncThemeAppSyncUiFromState();
+      renderLayoutPreview();
+    });
+    el("pt-stroke")?.addEventListener("change", (e) => {
+      state.themeAppSync.borderOutline = !!e.target.checked;
+      syncThemeAppSyncUiFromState();
+      renderLayoutPreview();
+    });
+    el("pt-hints")?.addEventListener("change", (e) => {
+      try { localStorage.setItem(PREVIEW_HINTS_KEY, e.target.checked ? "1" : "0"); } catch (_) {}
+      renderLayoutPreview();
+    });
+    syncPreviewToolbarUi();
+  }
+
+  // ── 预览按键按压反馈 ──
+  function setupPreviewPressFeedback() {
+    const root = el("layout-preview");
+    if (!root || root.dataset.pressBound) return;
+    root.dataset.pressBound = "1";
+    const clear = (event) => {
+      const key = event.target?.closest?.(".layout-key");
+      if (key) key.classList.remove("pressed");
+    };
+    root.addEventListener("pointerdown", (event) => {
+      const key = event.target?.closest?.(".layout-key");
+      if (key) key.classList.add("pressed");
+    });
+    root.addEventListener("pointerup", clear);
+    root.addEventListener("pointerleave", clear);
+    root.addEventListener("pointercancel", clear);
+  }
+
+  // ── JSON 实时校验（4 个 JSON 卡片共用）──
+  const jsonCheckTimers = {};
+  const JSON_PREFIXES = ["layout", "theme", "popup", "icon-theme"];
+
+  function jsonIssuePanelId(prefix) { return `${prefix}-json-issues`; }
+
+  function getJsonTextFor(prefix) {
+    if (prefix === "layout") return getLayoutJsonText();
+    if (prefix === "theme") return getThemeJsonText();
+    if (prefix === "popup") return getPopupJsonText();
+    return el("icon-theme-json")?.value ?? "";
+  }
+
+  function setJsonTextFor(prefix, text) {
+    if (prefix === "layout") { setLayoutJsonText(text); return; }
+    if (prefix === "theme") { setThemeJsonText(text); return; }
+    if (prefix === "popup") { setPopupJsonText(text); return; }
+    const ta = el("icon-theme-json");
+    if (ta) ta.value = text;
+  }
+
+  function applyJsonTextFor(prefix) {
+    if (prefix === "layout") { applyLayoutJsonEditorInput(); return; }
+    if (prefix === "theme") { applyThemeJsonEditorInput(); return; }
+    if (prefix === "popup") { applyPopupJsonEditorInput(); return; }
+    applyIconThemeJsonInput();
+  }
+
+  function locateJsonIssue(prefix, pos) {
+    if (prefix === "layout") {
+      const editor = state.layoutJsonEditor;
+      if (editor) {
+        editor.dispatch({ selection: { anchor: pos, head: Math.min(pos + 40, editor.state.doc.length) } });
+        editor.focus();
+        return;
+      }
+    }
+    if (prefix === "theme") {
+      const editor = state.themeJsonEditor;
+      if (editor) {
+        editor.dispatch({ selection: { anchor: pos, head: Math.min(pos + 40, editor.state.doc.length) } });
+        editor.focus();
+        return;
+      }
+    }
+    if (prefix === "popup") {
+      const editor = state.popupJsonEditor;
+      if (editor) {
+        editor.dispatch({ selection: { anchor: pos, head: Math.min(pos + 40, editor.state.doc.length) } });
+        editor.focus();
+        return;
+      }
+    }
+    const ta = el(`${prefix}-json`);
+    if (!ta) return;
+    ta.focus();
+    ta.setSelectionRange(pos, Math.min(pos + 40, ta.value.length));
+    try { ta.blur(); ta.focus(); } catch (_) {}
+  }
+
+  function renderJsonIssues(prefix, report, notice) {
+    const panel = el(jsonIssuePanelId(prefix));
+    if (!panel) return;
+    if (!report) { panel.className = "json-issues"; panel.innerHTML = ""; return; }
+    panel.className = "json-issues show";
+    if (report.parseOk && !report.total) {
+      panel.classList.add("ok");
+      panel.innerHTML = `<div class="json-issue-line"><span class="json-issue-main">✔ JSON 语法正常${notice ? ` · ${escapeHtml(notice)}` : ""}</span></div>`;
+      return;
+    }
+    const errorMode = !report.parseOk;
+    panel.classList.add(errorMode ? "error" : "warn");
+    const issuesHtml = report.issues.map((issue) => {
+      const firstPos = issue.positions?.[0];
+      const loc = firstPos != null
+        ? `<span class="json-issue-locatable" data-pos="${firstPos}" title="点击定位到第 ${issue.lines[0]} 行">第 ${issue.lines.slice(0, 5).join("、")}${issue.lines.length > 5 ? "…" : ""} 行 ×${issue.count}</span>`
+        : "";
+      return `<div class="json-issue-line"><span class="json-issue-main">• ${escapeHtml(issue.label)}：${loc}</span></div>`;
+    }).join("");
+    const parseErrorHtml = errorMode && report.parseError
+      ? `<div class="json-issue-line"><span class="json-issue-main">✘ 解析失败：${escapeHtml(report.parseError)}</span></div>`
+      : "";
+    panel.innerHTML = `
+      ${parseErrorHtml}${issuesHtml}
+      <div class="json-issue-line">
+        <span class="json-issue-main">${errorMode ? "可尝试自动修复常见问题" : `共 ${report.total} 处可自动修复`}</span>
+        <span class="json-issue-actions">
+          <button type="button" data-json-action="fix-apply">修复并应用</button>
+          <button type="button" data-json-action="fix-text">仅修复文本</button>
+        </span>
+      </div>
+    `;
+    panel.querySelectorAll(".json-issue-locatable").forEach((node) => {
+      node.addEventListener("click", () => locateJsonIssue(prefix, Number(node.dataset.pos) || 0));
+    });
+    panel.querySelectorAll("button[data-json-action]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const fresh = F5aJsonLint.inspectJsonText(getJsonTextFor(prefix));
+        if (!fresh.changed) {
+          setStatus(`${prefix}-json-status`, fresh.parseOk ? "没有可自动修复的问题" : "存在无法自动修复的结构错误", fresh.parseOk ? "ok" : "err");
+          return;
+        }
+        if (btn.dataset.jsonAction === "fix-apply") {
+          setJsonTextFor(prefix, fresh.fixedText);
+          applyJsonTextFor(prefix);
+          setStatus(`${prefix}-json-status`, "已自动修复并应用", "ok");
+          renderJsonIssues(prefix, F5aJsonLint.inspectJsonText(fresh.fixedText));
+        } else {
+          setJsonTextFor(prefix, fresh.fixedText);
+          setStatus(`${prefix}-json-status`, "已修复文本（未应用）", "ok");
+          renderJsonIssues(prefix, fresh);
+        }
+      });
+    });
+  }
+
+  function checkJsonFor(prefix, notice) {
+    const report = F5aJsonLint.inspectJsonText(getJsonTextFor(prefix));
+    renderJsonIssues(prefix, report, notice);
+    return report;
+  }
+
+  function scheduleJsonCheck(prefix) {
+    clearTimeout(jsonCheckTimers[prefix]);
+    jsonCheckTimers[prefix] = setTimeout(() => checkJsonFor(prefix), 300);
+  }
+
+  function setupJsonValidation() {
+    JSON_PREFIXES.forEach((prefix) => {
+      el(`${prefix}-json-check`)?.addEventListener("click", () => {
+        const report = checkJsonFor(prefix);
+        setStatus(`${prefix}-json-status`, report.parseOk && !report.total ? "JSON 语法正常" : `发现 ${report.total || 1} 处问题`, report.parseOk && !report.total ? "ok" : "err");
+      });
+      el(`${prefix}-json-fix`)?.addEventListener("click", () => {
+        const fresh = F5aJsonLint.inspectJsonText(getJsonTextFor(prefix));
+        if (!fresh.changed) {
+          setStatus(`${prefix}-json-status`, "没有可自动修复的问题", "ok");
+          return;
+        }
+        setJsonTextFor(prefix, fresh.fixedText);
+        renderJsonIssues(prefix, fresh);
+        setStatus(`${prefix}-json-status`, `已修复 ${fresh.total} 处问题（未应用）`, "ok");
+      });
+      el(`${prefix}-json-format`)?.addEventListener("click", () => {
+        const fixed = F5aJsonLint.sanitizeJsonText(getJsonTextFor(prefix));
+        try {
+          const pretty = `${JSON.stringify(JSON.parse(fixed), null, 2)}\n`;
+          setJsonTextFor(prefix, pretty);
+          applyJsonTextFor(prefix);
+          renderJsonIssues(prefix, F5aJsonLint.inspectJsonText(pretty));
+          setStatus(`${prefix}-json-status`, "已格式化并应用", "ok");
+        } catch (e) {
+          setStatus(`${prefix}-json-status`, `格式化失败：${e.message}`, "err");
+        }
+      });
+      el(`${prefix}-json-copy`)?.addEventListener("click", async () => {
+        const text = getJsonTextFor(prefix);
+        try {
+          await navigator.clipboard.writeText(text);
+          setStatus(`${prefix}-json-status`, "已复制到剪贴板", "ok");
+        } catch (_) {
+          const ta = el(`${prefix}-json`);
+          if (ta) {
+            ta.select();
+            document.execCommand("copy");
+            setStatus(`${prefix}-json-status`, "已复制到剪贴板", "ok");
+          }
+        }
+      });
+    });
+  }
+
+  function applyIconThemeJsonInput() {
+    const theme = currentIconThemeEntry();
+    if (!theme || theme.builtin) {
+      setStatus("icon-theme-json-status", "内置主题不可编辑", "err");
+      return;
+    }
+    try {
+      const parsed = JSON.parse(getJsonTextFor("icon-theme") || "{}");
+      if (typeof parsed.name === "string" && parsed.name.trim()) theme.name = parsed.name.trim();
+      if (typeof parsed.author === "string") theme.author = parsed.author;
+      if (Number.isInteger(Number(parsed.version))) theme.version = Number(parsed.version);
+      const thumb = readIconThemeThumbnail(parsed);
+      if (thumb !== null || parsed.thumbnail_svg === null || parsed.thumbnailSvg === null) theme.thumbnailSvg = thumb;
+      if (parsed.icons && typeof parsed.icons === "object") theme.icons = parsed.icons;
+      renderIconThemeEditor();
+      syncIconThemeJsonFromState();
+      setStatus("icon-theme-json-status", "JSON 已应用到当前图标主题", "ok");
+    } catch (e) {
+      setStatus("icon-theme-json-status", `JSON 无效：${e.message}`, "err");
+    }
+  }
+
+  function setupJsonLiveValidation() {
+    // 与既有的实时应用逻辑并行：每次 JSON 输入都排程一次语法检查
+    const textareas = [
+      ["icon-theme", el("icon-theme-json")]
+    ];
+    textareas.forEach(([prefix, ta]) => {
+      ta?.addEventListener("input", () => scheduleJsonCheck(prefix));
+    });
+    // CodeMirror 系的三个编辑器由 apply*JsonEditorInput 驱动（见各自的 input 接线处调用 scheduleJsonCheck）
+  }
+
+  function setupUiConvenienceFeatures() {
+    setupSiteThemeToggle();
+    setupUndoRedo();
+    setupFloatTools();
+    setupPreviewToolbar();
+    setupPreviewPressFeedback();
+    setupJsonValidation();
+    setupJsonLiveValidation();
+    // 顶栏新增动作区后可能换行，尺寸变化时同步 fixed 布局变量
+    const topbar = document.querySelector(".topbar");
+    if (topbar && window.ResizeObserver) {
+      new ResizeObserver(() => updateFixedChromeMetrics()).observe(topbar);
+    }
+  }
+
   async function main() {
     await initializeBuiltinData();
     setupBeforeUnloadGuard();
@@ -9636,7 +10196,10 @@
     setupIconThemeQrActions();
     setupThemeAppSyncUi();
     setupImeBridgeActions();
+    setupUiConvenienceFeatures();
+    restoreDraftFromStorage();
     await autoLoadImeDataOnStartup();
+    beginHistoryTracking();
     const previewPanel = document.querySelector(".keyboard-preview-panel");
     if (previewPanel) {
       previewPanel.addEventListener("toggle", () => {

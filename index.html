@@ -4,17 +4,41 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>fcitx5-android see me - Fcitx5 Android 可视化编辑器</title>
-  <link rel="stylesheet" href="./style.css?v=20261006090000">
+  <link rel="stylesheet" href="./style.css?v=20261007092000">
 </head>
 <body>
   <header class="topbar">
-    <h1>fcitx5-android see me</h1>
-    <h2>匹配<a href="https://github.com/SandyYuR/fcitx5-android" target="_blank" rel="noopener noreferrer">SandyYuR/fcitx5-android</a>的可视化编辑器</h2>
+    <div class="topbar-main">
+      <div class="topbar-title">
+        <h1>fcitx5-android see me</h1>
+        <h2>匹配<a href="https://github.com/SandyYuR/fcitx5-android" target="_blank" rel="noopener noreferrer">SandyYuR/fcitx5-android</a>的可视化编辑器</h2>
+      </div>
+      <div class="topbar-actions">
+        <div class="site-theme-group" role="group" aria-label="界面配色">
+          <button type="button" class="mini-button site-theme-btn" data-site-theme="auto" title="跟随系统亮暗">◐ 自动</button>
+          <button type="button" class="mini-button site-theme-btn" data-site-theme="light" title="亮色界面">☀ 亮色</button>
+          <button type="button" class="mini-button site-theme-btn" data-site-theme="dark" title="暗色界面">☾ 暗色</button>
+        </div>
+        <span class="topbar-sep" aria-hidden="true"></span>
+        <button type="button" id="top-undo" class="mini-button" title="撤销 (Ctrl+Z)" disabled>↶ 撤销</button>
+        <button type="button" id="top-redo" class="mini-button" title="重做 (Ctrl+Y)" disabled>↷ 重做</button>
+      </div>
+    </div>
   </header>
 
   <main>
     <details class="keyboard-preview-panel" open>
       <summary>布局预览</summary>
+      <div class="preview-toolbar" id="preview-toolbar">
+        <span class="pt-cell"><label for="pt-height">高度%</label><input id="pt-height" class="num-input" type="number" min="10" max="90" step="1" placeholder="默认"></span>
+        <span class="pt-cell"><label for="pt-corner">圆角</label><input id="pt-corner" class="num-input" type="number" min="0" max="32" step="1"><span class="pt-unit">dp</span></span>
+        <span class="pt-cell"><label for="pt-gap-h">横距</label><input id="pt-gap-h" class="num-input" type="number" min="0" max="24" step="1"><span class="pt-unit">dp</span></span>
+        <span class="pt-cell"><label for="pt-gap-v">纵距</label><input id="pt-gap-v" class="num-input" type="number" min="0" max="24" step="1"><span class="pt-unit">dp</span></span>
+        <span class="preview-toolbar-sep" aria-hidden="true"></span>
+        <label><input type="checkbox" id="pt-border"> 按键边框</label>
+        <label><input type="checkbox" id="pt-stroke"> 边框描边</label>
+        <label><input type="checkbox" id="pt-hints"> 滑动提示</label>
+      </div>
       <div class="preview-shell">
         <div id="theme-preview-extra-left" class="theme-preview-extra-side"></div>
         <div class="preview-center">
@@ -110,6 +134,13 @@
         <details class="card json-card" id="layout-json-card">
           <summary>JSON</summary>
           <div class="json-card-body">
+            <div id="layout-json-issues" class="json-issues"></div>
+            <div class="toolbar">
+              <button id="layout-json-check" type="button">检查语法</button>
+              <button id="layout-json-fix" type="button">一键修复</button>
+              <button id="layout-json-format" type="button">格式化</button>
+              <button id="layout-json-copy" type="button">复制</button>
+            </div>
             <textarea id="layout-json" class="json-editor"></textarea>
             <div class="status" id="layout-json-status"></div>
           </div>
@@ -215,6 +246,13 @@
         <details class="card json-card" id="theme-json-card" open>
           <summary>主题 JSON</summary>
           <div class="json-card-body">
+            <div id="theme-json-issues" class="json-issues"></div>
+            <div class="toolbar">
+              <button id="theme-json-check" type="button">检查语法</button>
+              <button id="theme-json-fix" type="button">一键修复</button>
+              <button id="theme-json-format" type="button">格式化</button>
+              <button id="theme-json-copy" type="button">复制</button>
+            </div>
             <textarea id="theme-json" class="json-editor"></textarea>
             <div id="theme-json-status" class="status"></div>
           </div>
@@ -245,6 +283,13 @@
         <details class="card json-card" id="popup-json-card" open>
           <summary>弹出字符 JSON</summary>
           <div class="json-card-body">
+            <div id="popup-json-issues" class="json-issues"></div>
+            <div class="toolbar">
+              <button id="popup-json-check" type="button">检查语法</button>
+              <button id="popup-json-fix" type="button">一键修复</button>
+              <button id="popup-json-format" type="button">格式化</button>
+              <button id="popup-json-copy" type="button">复制</button>
+            </div>
             <textarea id="popup-json" class="json-editor"></textarea>
             <div id="popup-json-status" class="status"></div>
           </div>
@@ -281,6 +326,13 @@
         <details class="card json-card" id="icon-theme-json-card" open>
           <summary>图标主题 JSON</summary>
           <div class="json-card-body">
+            <div id="icon-theme-json-issues" class="json-issues"></div>
+            <div class="toolbar">
+              <button id="icon-theme-json-check" type="button">检查语法</button>
+              <button id="icon-theme-json-fix" type="button">一键修复</button>
+              <button id="icon-theme-json-format" type="button">格式化</button>
+              <button id="icon-theme-json-copy" type="button">复制</button>
+            </div>
             <textarea id="icon-theme-json" class="json-editor"></textarea>
             <div id="icon-theme-json-status" class="status"></div>
           </div>
@@ -293,6 +345,14 @@
     <p><center>All rights reserved © <a href="https://github.com/fxliang/f5a-see-me" target="_blank" rel="noopener noreferrer">fxliang/f5a-see-me</a></center></p>
     <center><span id="busuanzi_container_page_pv">本页访问量<span id="busuanzi_value_page_pv"></span>次</span></center>
   </footer>
+
+  <div class="float-layer" aria-hidden="false">
+    <div id="float-undo-group" class="float-group" hidden>
+      <button type="button" id="float-undo" class="mini-button" title="撤销 (Ctrl+Z)" disabled>↶ 撤销</button>
+      <button type="button" id="float-redo" class="mini-button" title="重做 (Ctrl+Y)" disabled>↷ 重做</button>
+    </div>
+    <button type="button" id="float-top" class="float-bottom-right" hidden title="回到页面顶部">↑ 顶部</button>
+  </div>
 
   <dialog id="layout-add-dialog" class="editor-dialog sub-dialog">
     <form method="dialog" class="editor-form">
@@ -699,8 +759,9 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script defer src="https://busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
   <script src="./js/qr-import.js?v=20260520113600"></script>
+  <script src="./js/json-lint.js?v=20261007090000"></script>
   <script src="./js/jscolor/jscolor.js?v=20260520113600"></script>
   <script src="./js/key-editor-bindings.js?v=20260915000000"></script>
-  <script src="./js/app.js?v=20261006090000"></script>
+  <script src="./js/app.js?v=20261007091000"></script>
 </body>
 </html>
