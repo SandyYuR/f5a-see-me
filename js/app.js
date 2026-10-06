@@ -4623,8 +4623,26 @@
       delete keyDialogState.draft.weight;
       delete keyDialogState.draft.rowHeightPercent;
     }
+    // 宏事件子按钮（点击/划动/长按的编辑与清空）的禁用态必须随类型即时同步：
+    // 此前只在 openMacroDialog 打开时刷新，类型切换后残留上一次的禁用状态
+    syncMacroEventButtonsEnabled(type);
     refreshKeyDialogSummaries();
     syncKeyDialogActionButtons();
+  }
+
+  function syncMacroEventButtonsEnabled(type) {
+    const c = keyTypeCapabilities(type || "AlphabetKey");
+    [
+      ["layout-key-macro-edit-tap", c.hasTapAction],
+      ["layout-key-macro-clear-tap", c.hasTapAction],
+      ["layout-key-macro-edit-swipe", c.hasSwipeAction],
+      ["layout-key-macro-clear-swipe", c.hasSwipeAction],
+      ["layout-key-macro-edit-long-press", c.hasLongPressAction],
+      ["layout-key-macro-clear-long-press", c.hasLongPressAction]
+    ].forEach(([id, enabled]) => {
+      const node = el(id);
+      if (node) node.disabled = !enabled;
+    });
   }
 
   function syncKeyDialogActionButtons() {
@@ -4907,13 +4925,7 @@
   function openMacroDialog() {
     updateDraftFromMainFields();
     const key = keyDialogState.draft || {};
-    const c = keyTypeCapabilities(key.type || "AlphabetKey");
-    el("layout-key-macro-edit-tap").disabled = !c.hasTapAction;
-    el("layout-key-macro-clear-tap").disabled = !c.hasTapAction;
-    el("layout-key-macro-edit-swipe").disabled = !c.hasSwipeAction;
-    el("layout-key-macro-clear-swipe").disabled = !c.hasSwipeAction;
-    el("layout-key-macro-edit-long-press").disabled = !c.hasLongPressAction;
-    el("layout-key-macro-clear-long-press").disabled = !c.hasLongPressAction;
+    syncMacroEventButtonsEnabled(key.type || "AlphabetKey");
     setStatus("layout-key-macro-tap-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.tap)), "");
     setStatus("layout-key-macro-swipe-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.swipe)), "");
     setStatus("layout-key-macro-long-press-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.longPress)), "");
