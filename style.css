@@ -44,12 +44,9 @@ body {
 }
 
 .topbar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  /* 顶栏随页面滚动（借鉴 foxy-see-me）：滚动离开后由悬浮撤销/回到顶部按钮接管 */
+  position: static;
   z-index: 10;
-  min-height: var(--topbar-height);
   padding: 10px 16px 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
@@ -87,7 +84,7 @@ body {
   padding: clamp(8px, 1.2vh, 12px) clamp(12px, 2.5vh, 20px);
   border-bottom: 1px solid var(--border);
   position: sticky;
-  top: calc(var(--topbar-height) + var(--preview-panel-height));
+  top: 0;
   z-index: 8;
   background: var(--bg);
 }
@@ -107,7 +104,7 @@ body {
 }
 
 main {
-  padding: calc(var(--topbar-height) + var(--preview-panel-height)) 0 24px;
+  padding: 0 0 24px;
 }
 
 .panel {
@@ -160,10 +157,7 @@ summary {
 }
 
 .keyboard-preview-panel {
-  position: fixed;
-  top: var(--topbar-height);
-  left: 0;
-  right: 0;
+  position: relative;
   z-index: 9;
   background: var(--panel-deep);
   border-bottom: 1px solid var(--border);
@@ -898,8 +892,8 @@ input[type="checkbox"] {
   min-height: clamp(28px, 4vh, 36px);
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #242a38;
-  color: var(--text);
+  background: var(--chip-key-bg, #242a38);
+  color: var(--chip-key-fg, var(--text));
   padding: clamp(2px, 0.5vh, 5px) clamp(6px, 1.2vh, 12px);
   cursor: grab;
   position: relative;
@@ -923,14 +917,14 @@ input[type="checkbox"] {
 }
 
 .layout-chip.alt-key {
-  background: #303645;
-  color: var(--sub);
+  background: var(--chip-alt-bg, #303645);
+  color: var(--chip-alt-fg, var(--sub));
 }
 
 .layout-chip.accent-key {
-  background: var(--primary);
+  background: var(--chip-accent-bg, var(--primary));
   border-color: var(--primary);
-  color: white;
+  color: var(--chip-accent-fg, white);
 }
 
 .layout-chip.macro-key {
@@ -946,7 +940,8 @@ input[type="checkbox"] {
 
 .layout-chip.space-key {
   min-width: clamp(80px, 12vh, 120px);
-  background: #2a3140;
+  background: var(--chip-space-bg, #2a3140);
+  color: var(--chip-key-fg, var(--text));
 }
 
 .chip-main {
@@ -1015,7 +1010,10 @@ input[type="checkbox"] {
   gap: 10px;
   align-items: start;
   padding-top: 4px;
-  zoom: var(--preview-zoom, 1);
+  /* 内容整体限宽居中（借鉴 foxy 的 --content-max）：
+     键盘最大 720dp，宽屏下避免两侧色块被拉到视口两端留下大片空白 */
+  max-width: 1120px;
+  margin: 0 auto;
 }
 
 .preview-center {
@@ -1060,7 +1058,7 @@ input[type="checkbox"] {
   font-size: clamp(14px, 42cqw, 23px);
   cursor: default;
   container-type: inline-size;
-  margin: var(--preview-key-vgap, 0px) 0;
+  margin: max(var(--preview-key-vgap, 0px), 2px) 0;
 }
 
 .layout-key.no-border {
@@ -1086,7 +1084,8 @@ input[type="checkbox"] {
 
 .layout-key.border-shadow {
   border-width: 0 !important;
-  box-shadow: inset 0 -1px 0 var(--preview-key-shadow, rgba(0, 0, 0, 0.18));
+  /* 底部实心偏移投影，模拟 app 键位底部阴影层；按键纵向 margin 保证投影有落点 */
+  box-shadow: 0 2px 0 var(--preview-key-shadow, rgba(0, 0, 0, 0.18));
 }
 
 .layout-key.border-outline {
@@ -1855,10 +1854,6 @@ input[type="checkbox"] {
 }
 
 @media (max-width: 1080px) {
-  :root {
-    --topbar-height: 96px;
-    --preview-panel-height: clamp(140px, 22vh, 220px);
-  }
 
   .grid {
     grid-template-columns: 1fr;
@@ -1936,10 +1931,6 @@ input[type="checkbox"] {
 
 /* Compact vertical spacing for shorter viewports so footer can show */
 @media (max-height: 980px) {
-  :root {
-    --topbar-height: 64px;
-    --preview-panel-height: clamp(120px, 18vh, 180px);
-  }
 
   .card {
     padding: 8px;
@@ -2316,6 +2307,8 @@ html.site-light .popup-entry-delete {
   padding: 2px 0 6px;
   font-size: 12px;
   color: var(--sub);
+  max-width: 1120px;
+  margin: 0 auto;
 }
 
 .preview-toolbar .pt-cell {
@@ -2472,6 +2465,12 @@ html.site-light .popup-entry-delete {
   pointer-events: none;
 }
 
+.layout-key-icon {
+  width: 1.25em;
+  height: 1.25em;
+  display: block;
+}
+
 .layout-key-alt {
   pointer-events: none;
 }
@@ -2481,38 +2480,56 @@ html.site-light .popup-entry-delete {
   pointer-events: none;
 }
 
-/* 亮色模式补丁：硬编码深色的行编辑器按键芯片等 */
-html.site-light .layout-chip {
-  background: #eef1f8;
-  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .06);
+
+
+/* ── 分体预览：中缝空槽 ────────────────────────────────── */
+.layout-key-slot.layout-split-gap {
+  flex: 0 0 var(--key-width, 0%);
+  padding: 0;
+  background: transparent;
+  border: none;
 }
 
-html.site-light .layout-chip.dragging,
-html.site-light .layout-chip.drop-target {
-  background: #e2e8f4;
+/* ── CodeMirror 跟随站点亮暗（site-mode-light = 解析后的实际亮色模式）── */
+html.site-mode-light .cm-editor {
+  background: transparent;
+  color: #383a42;
 }
 
-@media (prefers-color-scheme: light) {
-  html.site-auto .layout-chip { background: #eef1f8; box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .06); }
-  html.site-auto .layout-chip.dragging,
-  html.site-auto .layout-chip.drop-target { background: #e2e8f4; }
+html.site-mode-light .cm-gutters {
+  background: var(--panel-inner);
+  color: #8a93a8;
+  border-right-color: var(--border) !important;
 }
 
-html.site-light .layout-chip.alt-key {
-  background: #e6eaf4;
-  color: #5c6577;
+html.site-mode-light .cm-activeLine {
+  background: rgba(47, 107, 255, 0.06);
 }
 
-html.site-light .layout-chip.space-key {
-  background: #dde3ef;
+html.site-mode-light .cm-activeLineGutter {
+  background: rgba(47, 107, 255, 0.10);
+  color: var(--text);
 }
 
-html.site-light .layout-chip.compose-key {
-  color: #2e8f63;
+html.site-mode-light .cm-content {
+  caret-color: var(--primary);
 }
 
-@media (prefers-color-scheme: light) {
-  html.site-auto .layout-chip.alt-key { background: #e6eaf4; color: #5c6577; }
-  html.site-auto .layout-chip.space-key { background: #dde3ef; }
-  html.site-auto .layout-chip.compose-key { color: #2e8f63; }
-}
+/* oneDark 令牌色在白底下的对比度修正 */
+html.site-mode-light .cm-keyword { color: #a626a4; }
+html.site-mode-light .cm-definition { color: #4078f2; }
+html.site-mode-light .cm-def { color: #4078f2; }
+html.site-mode-light .cm-variable { color: #383a42; }
+html.site-mode-light .cm-variableName { color: #383a42; }
+html.site-mode-light .cm-property { color: #b76b01; }
+html.site-mode-light .cm-string { color: #50a14f; }
+html.site-mode-light .cm-number,
+html.site-mode-light .cm-atom { color: #986801; }
+html.site-mode-light .cm-bool { color: #986801; }
+html.site-mode-light .cm-comment { color: #a0a1a7; font-style: italic; }
+html.site-mode-light .cm-operator,
+html.site-mode-light .cm-punctuation,
+html.site-mode-light .cm-separator { color: #383a42; }
+html.site-mode-light .cm-meta { color: #4078f2; }
+html.site-mode-light .cm-bracket { color: #383a42; }
+html.site-mode-light ::selection { background: rgba(47, 107, 255, 0.22); }

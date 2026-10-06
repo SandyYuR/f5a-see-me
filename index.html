@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>fcitx5-android see me - Fcitx5 Android 可视化编辑器</title>
-  <link rel="stylesheet" href="./style.css?v=20261007092000">
+  <link rel="stylesheet" href="./style.css?v=20261008095000">
 </head>
 <body>
   <header class="topbar">
@@ -38,6 +38,9 @@
         <label><input type="checkbox" id="pt-border"> 按键边框</label>
         <label><input type="checkbox" id="pt-stroke"> 边框描边</label>
         <label><input type="checkbox" id="pt-hints"> 滑动提示</label>
+        <span class="preview-toolbar-sep" aria-hidden="true"></span>
+        <label><input type="checkbox" id="pt-split"> 分体</label>
+        <span class="pt-cell" id="pt-split-gap-cell"><label for="pt-split-gap">中缝</label><input id="pt-split-gap" class="num-input" type="number" min="5" max="60" step="1"><span class="pt-unit">%</span></span>
       </div>
       <div class="preview-shell">
         <div id="theme-preview-extra-left" class="theme-preview-extra-side"></div>
@@ -762,6 +765,6 @@
   <script src="./js/json-lint.js?v=20261007090000"></script>
   <script src="./js/jscolor/jscolor.js?v=20260520113600"></script>
   <script src="./js/key-editor-bindings.js?v=20260915000000"></script>
-  <script src="./js/app.js?v=20261008090000"></script>
+  <script src="./js/app.js?v=20261008094000"></script>
 </body>
 </html>

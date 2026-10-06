@@ -4,11 +4,31 @@
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   // ── 站点亮/暗主题（借鉴 foxy-see-me）：在首次渲染前应用，避免闪色 ──
+  // html 根元素挂 site-auto/site-light/site-dark（用户选择），
+  // 同时挂 site-mode-light/site-mode-dark（解析后的实际模式，auto 跟随系统），
+  // 供 CSS 对"实际为亮色"的场景写一套规则而不必重复媒体查询。
   const SITE_THEME_KEY = "f5a-editor-site-theme";
+  const SITE_MODE_MEDIA = window.matchMedia ? window.matchMedia("(prefers-color-scheme: light)") : null;
+  function effectiveSiteMode(mode) {
+    if (mode === "light" || mode === "dark") return mode;
+    return SITE_MODE_MEDIA && SITE_MODE_MEDIA.matches ? "light" : "dark";
+  }
   function applySiteThemeClass(mode) {
     const root = document.documentElement;
     root.classList.remove("site-auto", "site-light", "site-dark");
     root.classList.add(mode === "light" || mode === "dark" ? `site-${mode}` : "site-auto");
+    const effective = effectiveSiteMode(mode);
+    root.classList.toggle("site-mode-light", effective === "light");
+    root.classList.toggle("site-mode-dark", effective === "dark");
+  }
+  if (SITE_MODE_MEDIA) {
+    const onSystemModeChange = () => {
+      let saved = "auto";
+      try { saved = localStorage.getItem(SITE_THEME_KEY) || "auto"; } catch (_) {}
+      if (saved === "auto") applySiteThemeClass("auto");
+    };
+    if (SITE_MODE_MEDIA.addEventListener) SITE_MODE_MEDIA.addEventListener("change", onSystemModeChange);
+    else if (SITE_MODE_MEDIA.addListener) SITE_MODE_MEDIA.addListener(onSystemModeChange);
   }
   try {
     const saved = localStorage.getItem(SITE_THEME_KEY);
@@ -540,9 +560,11 @@
     lastJsonCardHeight: 0,
     lastThemeJsonCardHeight: 0,
     lastPopupJsonCardHeight: 0,
+    lastIconThemeJsonCardHeight: 0,
     layoutHeightObserver: null,
     themeHeightObserver: null,
     popupHeightObserver: null,
+    iconThemeHeightObserver: null,
     composeNestedContext: null,
     macroStepDrag: null,
     macroStepDragPointerId: null,
@@ -584,6 +606,11 @@
       keyVGap: 3,
       keyRadius: 4,
       punctPos: 'bottom',
+      // 分体键盘（与 app 的 split_keyboard_* 偏好对应；连 IME 时由 /api/v1/theme/prefs 覆盖）
+      splitEnabled: false,
+      splitGapPercent: 20,
+      splitThreshold: 470,
+      splitUseLandscape: false,
       previewMetrics: null
     },
     themeCrop: {
@@ -944,6 +971,20 @@
     root.style.borderColor = argbToCss(resolveThemeTokenColor("dividerColor"));
     // 按压反馈色：直接采用主题的 keyPressHighlightColor（通常自带透明度，作为覆盖层）
     root.style.setProperty("--preview-key-press", argbToCss(resolveThemeTokenColor("keyPressHighlightColor")));
+    // 行编辑器按键芯片跟随键盘主题色（挂在根节点上，编辑器芯片与弹窗都能取到）
+    const docRoot = document.documentElement;
+    const chipVars = {
+      "--chip-key-bg": "keyBackgroundColor",
+      "--chip-key-fg": "keyTextColor",
+      "--chip-alt-bg": "altKeyBackgroundColor",
+      "--chip-alt-fg": "altKeyTextColor",
+      "--chip-accent-bg": "accentKeyBackgroundColor",
+      "--chip-accent-fg": "accentKeyTextColor",
+      "--chip-space-bg": "spaceBarColor"
+    };
+    Object.entries(chipVars).forEach(([cssVar, token]) => {
+      docRoot.style.setProperty(cssVar, argbToCss(resolveThemeTokenColor(token)));
+    });
   }
 
   function createBuiltinThemeCatalog() {
@@ -2152,6 +2193,7 @@
     syncJsonEditorHeight();
     syncThemeJsonHeight();
     syncPopupJsonHeight();
+    syncIconThemeJsonHeight();
     if (targetId === "tab-popup") {
       renderPopupEditor();
       syncPopupJsonFromState();
@@ -3215,6 +3257,103 @@
     if (landscapeInput) landscapeInput.value = getHeightOverrideLandscape();
   }
 
+  // 键盘高度 override 的缩放系数：相对基准百分比（有 IME 量测时用其记录的百分比，否则用 app 默认 30%）
+  function resolvePreviewHeightScale(previewMetrics) {
+    const override = Number(getHeightOverride());
+    if (!Number.isFinite(override) || override <= 0) return 1;
+    const base = previewMetrics && Number(previewMetrics.keyboardHeightPercent) > 0
+      ? Number(previewMetrics.keyboardHeightPercent)
+      : 30;
+    return Math.min(3, Math.max(0.3, override / base));
+  }
+
+  // 分体行宽计算（对应 app 端 BaseKeyboard.buildSplitRow 的简化预览版）：
+  // - 桥接模式（行中间有 Space/MiniSpace 且弹性键 ≤1）：中缝宽度并入桥接空格键，
+  //   其余键按 splitScale 缩放，溢出时先压弹性键再压固定键，桥接键过宽时反哺两侧
+  // - 无桥接：取最接近中线的边界切开，两侧等比缩到 (1-gap)/2，中间留空缝
+  //   （app 端此处对弹性键有最低占比保护，预览按简单等比近似）
+  function resolveSplitRowLayout(row, gapFrac) {
+    if (!row || row.length < 2) return null;
+    const widths = resolveRegularRowWidths(row);
+    if (!widths.length) return null;
+    const keyWeightOf = (key) => {
+      const n = Number(key?.weight);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    };
+    const flexCount = row.filter((key) => keyWeightOf(key) <= 0).length;
+    const spaceIdx = row.findIndex((key) => key.type === "SpaceKey" || key.type === "MiniSpaceKey");
+    const bridgeIndex = spaceIdx >= 1 && spaceIdx <= row.length - 2 && flexCount <= 1 ? spaceIdx : -1;
+
+    if (bridgeIndex >= 0) {
+      const splitScale = Math.min(0.95, Math.max(0.40, 1 - gapFrac));
+      const nonBridge = row.map((_, i) => i).filter((i) => i !== bridgeIndex);
+      const isFixed = (i) => keyWeightOf(row[i]) > 0;
+      const preferred = nonBridge.filter((i) => isFixed(i) && row[i].type !== "SpaceKey" && row[i].type !== "MiniSpaceKey").map((i) => keyWeightOf(row[i]));
+      const fallbackW = nonBridge.filter((i) => isFixed(i)).map((i) => keyWeightOf(row[i]));
+      const refWidth = preferred.length
+        ? preferred.reduce((a, b) => a + b, 0) / preferred.length
+        : fallbackW.length
+          ? fallbackW.reduce((a, b) => a + b, 0) / fallbackW.length
+          : 1 / Math.max(1, row.length);
+      const assigned = {};
+      nonBridge.forEach((i) => { assigned[i] = (isFixed(i) ? keyWeightOf(row[i]) : refWidth) * splitScale; });
+      const sumAssigned = () => nonBridge.reduce((a, i) => a + (assigned[i] || 0), 0);
+      const flexIndices = nonBridge.filter((i) => !isFixed(i));
+      const fixedIndices = nonBridge.filter((i) => isFixed(i));
+      const bridgeMinWidth = Math.min(gapFrac + 0.12, 0.75);
+      let overflow = Math.max(0, sumAssigned() + bridgeMinWidth - 1);
+      if (overflow > 0 && flexIndices.length) {
+        const flexSum = flexIndices.reduce((a, i) => a + (assigned[i] || 0), 0);
+        if (flexSum > 0) {
+          const reduce = Math.min(overflow, flexSum);
+          flexIndices.forEach((i) => { assigned[i] -= reduce * ((assigned[i] || 0) / flexSum); });
+          overflow = Math.max(0, sumAssigned() + bridgeMinWidth - 1);
+        }
+      }
+      if (overflow > 0 && fixedIndices.length) {
+        const fixedSum = fixedIndices.reduce((a, i) => a + (assigned[i] || 0), 0);
+        if (fixedSum > 0) {
+          fixedIndices.forEach((i) => { assigned[i] -= overflow * ((assigned[i] || 0) / fixedSum); });
+        }
+      }
+      let bridgeWidth = Math.max(1 - sumAssigned(), bridgeMinWidth);
+      if (bridgeWidth > 0.75) {
+        const extra = bridgeWidth - 0.75;
+        const growTargets = flexIndices.length ? flexIndices : fixedIndices;
+        const targetSum = growTargets.reduce((a, i) => a + (assigned[i] || 0), 0);
+        if (targetSum > 0) {
+          growTargets.forEach((i) => { assigned[i] += extra * ((assigned[i] || 0) / targetSum); });
+        }
+        bridgeWidth = 0.75;
+      }
+      return { widths: row.map((_, i) => (i === bridgeIndex ? bridgeWidth : (assigned[i] || 0))), gapAfter: -1 };
+    }
+
+    let prefix = 0;
+    let bestIdx = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < row.length - 1; i++) {
+      prefix += widths[i] || 0;
+      const d = Math.abs(prefix - 0.5);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    const sideCapacity = Math.max(0.05, (1 - gapFrac) / 2);
+    const scaled = widths.map((w) => w * sideCapacity);
+    return { widths: scaled, gapAfter: bestIdx };
+  }
+
+  // 特殊键图标（借鉴 foxy-see-me 预览：退格/Shift/回车用 SVG 图标而非文字）
+  const PREVIEW_SPECIAL_KEY_ICONS = {
+    CapsKey: `<svg class="layout-key-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 8.41 16.59 13 18 11.59l-6-6-6 6L7.41 13 12 8.41zM6 18v-2h12v2H6z"/></svg>`,
+    BackspaceKey: `<svg class="layout-key-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 12.59L17.59 17 14 13.41 10.41 17 9 15.59 12.59 12 9 8.41 10.41 7 14 10.59 17.59 7 19 8.41 15.41 12 19 15.59z"/></svg>`,
+    ReturnKey: `<svg class="layout-key-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 7v4H5.83l3.58-3.59L8 6l-6 6 6 6 1.41-1.41L5.83 13H21V7h-2z"/></svg>`
+  };
+
+  function previewKeyFaceHtml(key) {
+    const icon = PREVIEW_SPECIAL_KEY_ICONS[key?.type];
+    return icon || escapeHtml(previewTitleFromObj(key));
+  }
+
   function renderLayoutPreview() {
     const rows = getRows();
     const rowPercents = resolveRowHeightPercents(rows);
@@ -3225,7 +3364,10 @@
     const keyVGap = Math.max(0, Number(cfg.keyVGap) || 0);
     const punctPos = cfg.punctPos || 'bottom';
     const previewMetrics = resolvePreviewMetrics();
-    const previewContentHeight = resolvePreviewContentHeight(rows);
+    const heightScale = resolvePreviewHeightScale(previewMetrics);
+    const previewContentHeight = resolvePreviewContentHeight(rows, heightScale);
+    const splitActive = !!cfg.splitEnabled && Number(cfg.splitGapPercent) >= 5;
+    const splitGapFrac = Math.min(0.6, Math.max(0.05, Number(cfg.splitGapPercent) / 100 || 0.2));
     applyPreviewThemeSurface();
     root.style.setProperty('--preview-row-gap', '8px');
     root.style.setProperty('--preview-key-hgap', `${cfg.keyHGap || 0}px`);
@@ -3237,10 +3379,11 @@
     root.style.setProperty('--preview-top-bar-height', `${previewMetrics?.topBarHeight || 0}px`);
     const rowsHtml = rows.map((row, rowIndex) => {
       const rowHeight = previewContentHeight
-        ? Math.max(28, Math.round(previewContentHeight * (rowPercents[rowIndex] || 0) / 100))
-        : effectiveRowHeight(rowPercents[rowIndex] ?? 0);
+        ? Math.max(24, Math.round(previewContentHeight * (rowPercents[rowIndex] || 0) / 100))
+        : Math.max(24, Math.round(effectiveRowHeight(rowPercents[rowIndex] ?? 0) * heightScale));
       const keyHeight = effectivePreviewKeyHeight(rowHeight, keyVGap);
-      const widths = resolveRegularRowWidths(row);
+      const splitLayout = splitActive ? resolveSplitRowLayout(row, splitGapFrac) : null;
+      const widths = splitLayout ? splitLayout.widths : resolveRegularRowWidths(row);
       return `<div class="layout-row" style="--row-height:${rowHeight}px;--key-height:${keyHeight}px"><div class="keys">${row.map((key, keyIndex) => {
         const w = widths[keyIndex] || 0;
         const widthPercent = `${(w * 100).toFixed(6)}%`;
@@ -3271,7 +3414,11 @@
         if (key.longPress) badges += `<span class="key-badge key-badge-lp" title="长按事件"></span>`;
         if (key.tap) badges += `<span class="key-badge key-badge-macro" title="含宏动作"></span>`;
         const previewEditTitle = `${key.type || "?"}。点击按键可直接编辑`;
-        return `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}" data-preview-row="${rowIndex}" data-preview-key="${keyIndex}" tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span>${alt}${hint}${badges}</div></div>`;
+        const slotHtml = `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}" data-preview-row="${rowIndex}" data-preview-key="${keyIndex}" tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(key)}</span>${alt}${hint}${badges}</div></div>`;
+        if (splitLayout && splitLayout.gapAfter === keyIndex) {
+          return `${slotHtml}<div class="layout-key-slot layout-split-gap" style="--key-width:${(splitGapFrac * 100).toFixed(4)}%"></div>`;
+        }
+        return slotHtml;
       }).join("")}</div></div>`;
     }).join("");
     root.innerHTML = buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg);
@@ -3282,7 +3429,8 @@
     });
     const height = getHeightOverride();
     const auxMeta = auxBarConfig ? `，辅助选择栏 ${auxBarConfig.position}${auxBarConfig.position !== "above_preedit" ? ` ${Math.round(auxBarConfig.sizePercent)}%` : ""}` : "";
-    setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${height ? `，键盘高度 ${height}%` : ""}${auxMeta}`, "");
+    const splitMeta = splitActive ? `，分体（中缝 ${Math.round(splitGapFrac * 100)}%）` : "";
+    setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${height ? `，键盘高度 ${height}%` : ""}${splitMeta}${auxMeta}`, "");
     renderThemeSupplementPreview();
     updateFixedChromeMetrics();
   }
@@ -3294,7 +3442,7 @@
       const colors = resolvePreviewColorsForKey(key);
       return `--preview-key-bg:${colors.backgroundCss};color:${colors.textCss};border-color:${colors.borderCss};--preview-key-shadow:${colors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
     };
-    const chipOf = (key, auxIndex) => `<div class="layout-key-slot" style="--key-width:0%"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyleOf(key))}" data-preview-aux-key="${auxIndex}" tabindex="0" role="button" title="${escapeAttr(`${key.type || "?"}。点击按键可直接编辑`)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${escapeHtml(previewTitleFromObj(key))}</span></div></div>`;
+    const chipOf = (key, auxIndex) => `<div class="layout-key-slot" style="--key-width:0%"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyleOf(key))}" data-preview-aux-key="${auxIndex}" tabindex="0" role="button" title="${escapeAttr(`${key.type || "?"}。点击按键可直接编辑`)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(key)}</span></div></div>`;
     const auxKeysHtml = auxBarKeys.length
       ? `<div class="keys aux-bar-keys">${auxBarKeys.map(chipOf).join("")}</div>`
       : `<div class="aux-bar-placeholder">辅助选择栏（无按键，运行时显示候选标签页）</div>`;
@@ -3474,40 +3622,15 @@
   }
 
   function updateFixedChromeMetrics() {
+    // 预览面板为文档流自然高度（借鉴 foxy-see-me）：不再按视口压缩 zoom，
+    // 键盘以原始尺寸渲染；顶栏/预览随页面滚动，悬浮工具接管离开后的操作。
     const topbar = document.querySelector(".topbar");
     const preview = document.querySelector(".keyboard-preview-panel");
     const topbarHeight = topbar?.offsetHeight || 0;
-
-    const shell = document.querySelector(".preview-shell");
-    // Temporarily reset zoom to measure natural height
-    const savedZoom = shell?.style.zoom;
-    if (shell) shell.style.zoom = "1";
-    const naturalHeight = shell?.offsetHeight || 220;
-    if (shell) shell.style.zoom = savedZoom || "";
-
-    // Scale preview based on viewport height (CSS pixels at 100% browser zoom).
-    // Derive this from physical screen dimensions so it stays stable regardless of
-    // browser Ctrl+/- zoom on desktop. On Android WebView without browser zoom,
-    // outerWidth/innerWidth ratio ≈ 1 and this degenerates to the DPR division.
-
-    // Estimate browser zoom factor (desktop Ctrl+/-); ≈ 1 on mobile / WebView.
-    const browserZoom = (window.outerWidth || window.innerWidth) / Math.max(1, window.innerWidth);
-    // Native device pixel ratio (independent of browser zoom).
-    const nativeDpr = (window.devicePixelRatio || 1) / Math.max(0.5, browserZoom);
-    const cssVh = screen.height / nativeDpr;
-
-    const isMobile = navigator.maxTouchPoints > 0;
-    const isShortDesktop = !isMobile && cssVh <= 900;
-    const ratio = isShortDesktop ? 0.16 : 0.22;
-    const targetMax = Math.max(cssVh * ratio, isShortDesktop ? 140 : 200);
-    let scale = 1;
-    if (naturalHeight > targetMax && naturalHeight > 0) {
-      scale = Math.max(0.45, targetMax / naturalHeight);
-    }
-    document.documentElement.style.setProperty("--preview-zoom", scale);
-
     const previewHeight = preview?.offsetHeight || 0;
-    document.documentElement.style.setProperty("--topbar-height", `${topbarHeight}px`);
+    // 钳制防反馈循环：顶栏异常撑高时不把大值写回定位变量
+    const safeTopbarHeight = Math.min(Math.max(topbarHeight, 56), 160);
+    document.documentElement.style.setProperty("--topbar-height", `${safeTopbarHeight}px`);
     document.documentElement.style.setProperty("--preview-panel-height", `${previewHeight}px`);
 
     // Balance theme side heights AFTER zoom is applied — purely visual, doesn't affect scaling
@@ -3609,14 +3732,15 @@
     };
   }
 
-  function resolvePreviewContentHeight(rows) {
+  function resolvePreviewContentHeight(rows, heightScale = 1) {
     const metrics = resolvePreviewMetrics();
     if (!metrics) return null;
     const rowCount = Math.max(1, rows.length);
     // targetHeight represents keyboard view height (keys area), which does NOT include
     // bottom padding. bottomPadding is a separate space below the keys in the Android layout.
     // No rowGap subtraction needed (CSS margin-bottom on rows was removed).
-    return Math.max(rowCount * 28, metrics.targetHeight);
+    const scale = Number.isFinite(heightScale) && heightScale > 0 ? heightScale : 1;
+    return Math.max(rowCount * 28, metrics.targetHeight * scale);
   }
 
   function effectiveRowHeight(percent) {
@@ -8356,8 +8480,14 @@
       state.themeAppSync.keyVGap = typeof payload.keyVGap === "number" ? payload.keyVGap : 3;
       state.themeAppSync.keyRadius = typeof payload.keyRadius === "number" ? payload.keyRadius : 4;
       state.themeAppSync.punctPos = typeof payload.punctPos === "string" ? payload.punctPos : "bottom";
+      // 分体键盘配置（app 端桥接 2026-10 起提供；旧桥接缺字段时保留本地值）
+      state.themeAppSync.splitEnabled = typeof payload.splitEnabled === "boolean" ? payload.splitEnabled : state.themeAppSync.splitEnabled;
+      state.themeAppSync.splitGapPercent = typeof payload.splitGapPercent === "number" ? payload.splitGapPercent : state.themeAppSync.splitGapPercent;
+      state.themeAppSync.splitThreshold = typeof payload.splitThreshold === "number" ? payload.splitThreshold : state.themeAppSync.splitThreshold;
+      state.themeAppSync.splitUseLandscape = typeof payload.splitUseLandscape === "boolean" ? payload.splitUseLandscape : state.themeAppSync.splitUseLandscape;
       state.themeAppSync.previewMetrics = normalizePreviewMetrics(payload);
       syncThemeAppSyncUiFromState();
+      syncPreviewToolbarUi();
       syncSurfaceColorIndicator();
       renderLayoutPreview();
     }
@@ -8373,7 +8503,11 @@
         keyHGap: Number(state.themeAppSync.keyHGap) || 0,
         keyVGap: Number(state.themeAppSync.keyVGap) || 0,
         keyRadius: Number(state.themeAppSync.keyRadius) || 0,
-        punctPos: state.themeAppSync.punctPos || "bottom"
+        punctPos: state.themeAppSync.punctPos || "bottom",
+        splitEnabled: !!state.themeAppSync.splitEnabled,
+        splitGapPercent: Math.round(Number(state.themeAppSync.splitGapPercent) || 20),
+        splitThreshold: Math.round(Number(state.themeAppSync.splitThreshold) || 470),
+        splitUseLandscape: !!state.themeAppSync.splitUseLandscape
       })
     });
   }
@@ -9038,7 +9172,49 @@
     if (textarea) textarea.readOnly = !editable;
   }
 
-  function syncIconThemeJsonHeight() {}
+  function syncIconThemeJsonHeight() {
+    // 与弹出字符/主题 JSON 卡片同款：按主卡片实际高度撑满 JSON 编辑器，
+    // 避免默认 textarea 高度太小看不清代码
+    const jsonCard = el("icon-theme-json-card");
+    if (!jsonCard || !jsonCard.open) return;
+    const mainCard = document.querySelector(".icon-theme-main-card");
+    let referenceCardHeight = Math.round(jsonCard.getBoundingClientRect().height || 0);
+    if (mainCard) {
+      const style = getComputedStyle(mainCard);
+      const border =
+        (Number.parseFloat(style.borderTopWidth || "0") || 0) +
+        (Number.parseFloat(style.borderBottomWidth || "0") || 0);
+      const scrollHeight = Math.round(mainCard.scrollHeight + border);
+      const mainRectHeight = Math.round(mainCard.getBoundingClientRect().height || 0);
+      referenceCardHeight = scrollHeight > 0 ? scrollHeight : (mainRectHeight > 0 ? mainRectHeight : referenceCardHeight);
+      state.lastIconThemeJsonCardHeight = referenceCardHeight;
+    }
+    const summary = jsonCard.querySelector("summary");
+    const status = el("icon-theme-json-status");
+    const toolbar = jsonCard.querySelector(".toolbar");
+    const cardStyle = getComputedStyle(jsonCard);
+    const cardVerticalPadding =
+      (Number.parseFloat(cardStyle.paddingTop || "0") || 0) +
+      (Number.parseFloat(cardStyle.paddingBottom || "0") || 0);
+    const natural = Math.floor(
+      referenceCardHeight -
+      cardVerticalPadding -
+      (summary?.offsetHeight || 0) -
+      (status?.offsetHeight || 0) -
+      (toolbar?.offsetHeight || 0) -
+      24
+    );
+    // 图标槽位网格很高，完全等高会让页面过长：跟随主卡片但不超过 85% 视口，超出部分编辑器内滚动
+    const height = Math.min(natural, Math.max(420, Math.round(window.innerHeight * 0.85)));
+    const textarea = el("icon-theme-json");
+    if (textarea) {
+      textarea.style.height = `${height}px`;
+      textarea.style.maxHeight = `${height}px`;
+      textarea.style.minHeight = "260px";
+      textarea.style.width = "100%";
+      textarea.style.overflow = "auto";
+    }
+  }
 
   let iconSlotDialogState = { slot: "", draftValue: "" };
 
@@ -9893,6 +10069,27 @@
 
   // ── 预览工具条（高度/圆角/间距/边框/提示）──
   const PREVIEW_HINTS_KEY = "f5a-editor-preview-hints";
+  const PREVIEW_SPLIT_KEY = "f5a-editor-preview-split";
+  function loadLocalSplitPrefs() {
+    // 无 IME 连接时保留本地预览选择（有 IME 时以 /api/v1/theme/prefs 为准）
+    try {
+      const raw = JSON.parse(localStorage.getItem(PREVIEW_SPLIT_KEY) || "null");
+      if (raw && typeof raw === "object") {
+        if (typeof raw.enabled === "boolean") state.themeAppSync.splitEnabled = raw.enabled;
+        if (Number.isFinite(Number(raw.gapPercent))) state.themeAppSync.splitGapPercent = Number(raw.gapPercent);
+      }
+    } catch (_) {}
+  }
+
+  function saveLocalSplitPrefs() {
+    try {
+      localStorage.setItem(PREVIEW_SPLIT_KEY, JSON.stringify({
+        enabled: !!state.themeAppSync.splitEnabled,
+        gapPercent: Math.round(Number(state.themeAppSync.splitGapPercent) || 20)
+      }));
+    } catch (_) {}
+  }
+
   function syncPreviewToolbarUi() {
     const height = el("pt-height");
     if (height) height.value = getHeightOverride();
@@ -9915,6 +10112,15 @@
       try { showHints = localStorage.getItem(PREVIEW_HINTS_KEY) !== "0"; } catch (_) {}
       hints.checked = showHints;
     }
+    const split = el("pt-split");
+    if (split) split.checked = !!state.themeAppSync.splitEnabled;
+    const splitGap = el("pt-split-gap");
+    if (splitGap) {
+      splitGap.value = Math.round(Number(state.themeAppSync.splitGapPercent) || 20);
+      splitGap.disabled = !state.themeAppSync.splitEnabled;
+    }
+    const splitGapCell = el("pt-split-gap-cell");
+    if (splitGapCell) splitGapCell.style.opacity = state.themeAppSync.splitEnabled ? "" : "0.45";
   }
 
   function setupPreviewToolbar() {
@@ -9951,6 +10157,20 @@
       try { localStorage.setItem(PREVIEW_HINTS_KEY, e.target.checked ? "1" : "0"); } catch (_) {}
       renderLayoutPreview();
     });
+    el("pt-split")?.addEventListener("change", (e) => {
+      state.themeAppSync.splitEnabled = !!e.target.checked;
+      saveLocalSplitPrefs();
+      syncPreviewToolbarUi();
+      renderLayoutPreview();
+    });
+    el("pt-split-gap")?.addEventListener("change", (e) => {
+      const n = Math.round(Number(e.target.value) || 20);
+      state.themeAppSync.splitGapPercent = Math.min(60, Math.max(5, n));
+      saveLocalSplitPrefs();
+      syncPreviewToolbarUi();
+      renderLayoutPreview();
+    });
+    loadLocalSplitPrefs();
     syncPreviewToolbarUi();
   }
 
@@ -10240,9 +10460,13 @@
     state.popupHeightObserver = new ResizeObserver(() => syncPopupJsonHeight());
     const popupMainCardEl = document.querySelector(".popup-main-card");
     if (popupMainCardEl) state.popupHeightObserver.observe(popupMainCardEl);
+    state.iconThemeHeightObserver = new ResizeObserver(() => syncIconThemeJsonHeight());
+    const iconThemeMainCardEl = document.querySelector(".icon-theme-main-card");
+    if (iconThemeMainCardEl) state.iconThemeHeightObserver.observe(iconThemeMainCardEl);
     window.addEventListener("resize", syncJsonEditorHeight);
     window.addEventListener("resize", syncThemeJsonHeight);
     window.addEventListener("resize", syncPopupJsonHeight);
+    window.addEventListener("resize", syncIconThemeJsonHeight);
     window.addEventListener("resize", updateFixedChromeMetrics);
     window.addEventListener("resize", () => requestAnimationFrame(() => {
       syncThemeCardBlurMaskGeometry();
