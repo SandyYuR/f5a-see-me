@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-09-15T00:00+08:00";
+  const WEB_EDITOR_BUILD = "2026-10-06T00:00+08:00";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   const MAGIC = "F5AQR1";
@@ -9,6 +9,7 @@
   const TRANSFER_TYPE_LAYOUT = "L";
   const TRANSFER_TYPE_THEME = "T";
   const TRANSFER_TYPE_POPUP = "P";
+  const TRANSFER_TYPE_ICON_THEME = "I";
   const IME_API_BASE = resolveImeApiBase();
   const LONG_IMAGE_QR_SIZE = 768;
   const LONG_IMAGE_PAGE_PADDING = 24;
@@ -20,6 +21,8 @@
   const DEFAULT_SUBMODE = "default";
   const META_KEY = "__meta__";
   const HEIGHT_KEY = "keyboard_height_percent";
+  // 横屏专用键盘高度（app 端 2026-07 起支持，与纵向高度同在 __meta__，10..90）
+  const HEIGHT_KEY_LANDSCAPE = "keyboard_height_percent_landscape";
   const AUX_BAR_KEY = "aux_bar";
   const AUX_BAR_POSITIONS = ["top", "bottom", "left", "right", "above_preedit"];
   const PREVIEW_KEY_BORDER_ENABLED = false;
@@ -317,11 +320,13 @@
     undo: "撤销",
     redo: "重做"
   };
-  const macroLayerModeLabels = { to: "切换到层", osl: "单次层" };
+  // 切层模式与 app 的 KeyAction.LayerSwitchMode 一致：to=固定切换、osl=单次层、back=返回上一层
+  const macroLayerModeLabels = { to: "切换到层", osl: "单次层", back: "返回上一层" };
   const macroAppActions = [
-    "theme", "virtual_keyboard", "more", "browse_user_data_dir", "clipboard",
-    "cursor_move", "floating_toggle", "language_switch", "reload_config",
-    "one_handed_keyboard", "input_method_options", "undo", "redo",
+    "theme", "theme_toggle", "icon_theme", "virtual_keyboard", "more",
+    "browse_user_data_dir", "clipboard", "cursor_move", "floating_toggle",
+    "language_switch", "reload_config", "one_handed_keyboard", "input_method_options",
+    "undo", "redo",
     "settings_global_options", "settings_input_methods", "settings_candidates_window",
     "settings_clipboard", "settings_symbol", "settings_plugin", "settings_advanced",
     "settings_developer", "settings_about", "settings_license",
@@ -329,6 +334,8 @@
   ];
   const macroAppActionLabels = {
     theme: "主题",
+    theme_toggle: "亮/暗主题切换",
+    icon_theme: "图标主题",
     virtual_keyboard: "虚拟键盘",
     more: "高级菜单",
     browse_user_data_dir: "浏览用户数据目录",
@@ -430,7 +437,9 @@
     "keys.return.send", "keys.return.next", "keys.return.previous", "keys.return.done",
     "keys.language", "keys.quickphrase", "keys.space",
     "keys.numpad", "keys.emoji", "keys.symbols", "keys.unicode",
-    "keys.pageup", "keys.pagedown"
+    "keys.pageup", "keys.pagedown",
+    "keys.cursor_up", "keys.cursor_down", "keys.cursor_left", "keys.cursor_right",
+    "keys.home", "keys.end"
   ];
 
   const iconThemeToolbarSlots = [
@@ -492,9 +501,11 @@
     wasmInitPromise: null,
     qr: { chunks: [], index: 0, transferId: "", layoutSignature: "" },
     themeQr: { chunks: [], index: 0, transferId: "", themeSignature: "" },
+    iconThemeQr: { chunks: [], index: 0, transferId: "" },
     qrImportRunning: false,
     themeImportRunning: false,
     popupImportRunning: false,
+    iconThemeImportRunning: false,
     themeAssetUrlByPath: new Map(),
     themeImageMetaByUrl: new Map(),
     dragKey: null,
@@ -673,6 +684,9 @@
       const normalized = normalizeColorValue(source);
       out[token] = normalized == null ? normalizeColorValue(defaultThemeColors[token]) : normalized;
     });
+    // 水波纹颜色是可选 token（app 端 Theme.Custom.waterRippleColor: Int?），
+    // 未设置（null）时由 app 按阴影色/键盘底色对比度自动计算
+    out.waterRippleColor = normalizeColorValue(raw?.waterRippleColor);
     return out;
   }
 
@@ -722,6 +736,63 @@
     if (!themeColorTokens.includes(token)) return normalizeColorValue(defaultThemeColors.backgroundColor) || 0;
     const theme = currentThemeEntry();
     return normalizeColorValue(theme?.colors?.[token]) ?? normalizeColorValue(defaultThemeColors[token]) ?? 0;
+  }
+
+  // 水波纹颜色：theme.colors.waterRippleColor 为 null 时按 app 的
+  // CustomThemeActivity.computeWaterRippleColor 公式回退——
+  // 以 keyShadowColor 对 keyboardColor（强制不透明）的对比度决定与强调键背景的混合比例
+  function resolveThemeRippleColor(colors = currentThemeEntry()?.colors) {
+    const set = normalizeColorValue(colors?.waterRippleColor);
+    if (set != null) return set;
+    return computeWaterRippleFallback(colors);
+  }
+
+  function computeWaterRippleFallback(colors) {
+    const shadow = normalizeColorValue(colors?.keyShadowColor);
+    const keyboard = normalizeColorValue(colors?.keyboardColor);
+    const accent = normalizeColorValue(colors?.accentKeyBackgroundColor);
+    if (shadow == null || keyboard == null || accent == null) return null;
+    const background = (keyboard >>> 0) | 0xff000000;
+    let foreground = shadow >>> 0;
+    if (((foreground >>> 24) & 0xff) !== 255) {
+      // 与 androidx ColorUtils.calculateContrast 一致：前景非不透明时先合成到底色上
+      foreground = compositeArgbOver(foreground, background);
+    }
+    const contrast = srgbContrastRatio(foreground, background);
+    return blendArgb(shadow, accent, contrast < 1.35 ? 0.72 : 0.28);
+  }
+
+  function compositeArgbOver(foreground, background) {
+    const alpha = ((foreground >>> 24) & 0xff) / 255;
+    const inverse = 1 - alpha;
+    const channel = (shift) =>
+      Math.round(((foreground >>> shift) & 0xff) * alpha + ((background >>> shift) & 0xff) * inverse);
+    return (0xff000000 | (channel(16) << 16) | (channel(8) << 8) | channel(0)) >>> 0;
+  }
+
+  function srgbLuminance(color) {
+    const expand = (v) => {
+      const c = v / 255;
+      return c < 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * expand((color >>> 16) & 0xff) + 0.7152 * expand((color >>> 8) & 0xff) + 0.0722 * expand(color & 0xff);
+  }
+
+  function srgbContrastRatio(foreground, background) {
+    const light = Math.max(srgbLuminance(foreground), srgbLuminance(background));
+    const dark = Math.min(srgbLuminance(foreground), srgbLuminance(background));
+    return (light + 0.05) / (dark + 0.05);
+  }
+
+  // 与 androidx ColorUtils.blendARGB 一致：ratio 为 0 时取 color1，1 时取 color2（含 alpha 通道）
+  function blendArgb(color1, color2, ratio) {
+    const inverse = 1 - ratio;
+    const channel = (shift) => {
+      const c1 = (color1 >>> shift) & 0xff;
+      const c2 = (color2 >>> shift) & 0xff;
+      return Math.round(c1 * inverse + c2 * ratio) & 0xff;
+    };
+    return toSignedInt32(((channel(24) << 24) | (channel(16) << 16) | (channel(8) << 8) | channel(0)) >>> 0);
   }
 
   function resolveKeyColorValue(key, customKey, monetKey, fallbackColor) {
@@ -1022,6 +1093,21 @@
       backgroundImage: theme.backgroundImageObject ? deepClone(theme.backgroundImageObject) : (theme.backgroundImage || ""),
       colors: deepClone(theme.colors)
     };
+  }
+
+  // app 端 CustomThemeSerializer 的当前版本号；导出必须带 version，
+  // 否则 app 会按 1.0 旧版迁移，用 keyTextColor/accent 覆盖候选词、弹出框等颜色
+  const APP_THEME_VERSION = "2.1";
+
+  // 展开为 app 扁平颜色字段；waterRippleColor 为 null（自动）时省略，交给 app 端默认
+  function buildAppThemeColorFields(colors) {
+    const flat = {};
+    themeColorTokens.forEach((token) => {
+      flat[token] = colors?.[token];
+    });
+    const ripple = normalizeColorValue(colors?.waterRippleColor);
+    if (ripple != null) flat.waterRippleColor = ripple;
+    return flat;
   }
 
   function syncThemeJsonFromState() {
@@ -2085,6 +2171,17 @@
     }
     const borderEnabled = state.themeAppSync?.borderEnabled ?? PREVIEW_KEY_BORDER_ENABLED;
     const activeSurfaceToken = borderEnabled ? "backgroundColor" : "keyboardColor";
+    const rippleAuto = normalizeColorValue(theme.colors?.waterRippleColor) == null;
+    const rippleHex = toArgbHex(resolveThemeRippleColor(theme.colors) ?? 0);
+    const rippleRowsHtml = `
+      <div class="theme-color-row" data-token="waterRippleColor">
+        <label title="app 端 Water Ripple 主题项；留空时由 app 按阴影色与键盘底色的对比度自动计算">水波纹颜色</label>
+        <div class="theme-color-inputs">
+          <label class="theme-ripple-auto"><input type="checkbox" id="theme-ripple-auto" ${rippleAuto ? "checked" : ""}> 自动</label>
+          <input type="text" class="theme-color-input" id="theme-ripple-input" value="${escapeAttr(rippleHex)}" placeholder="#AARRGGBB" ${rippleAuto ? "readonly" : ""}>
+        </div>
+      </div>
+    `;
     rows.innerHTML = themeColorTokens.map((token) => {
       const value = resolveThemeTokenColor(token);
       const argb = toArgbHex(value);
@@ -2102,10 +2199,11 @@
           </div>
         </div>
       `;
-    }).join("");
+    }).join("") + rippleRowsHtml;
 
     rows.querySelectorAll(".theme-color-row").forEach((row) => {
       const token = row.dataset.token;
+      if (token === "waterRippleColor") return; // 可空 token，下面单独绑定
       const input = row.querySelector(".theme-color-input");
       const syncThemeAfterColorChange = () => {
         renderThemeList();
@@ -2163,6 +2261,51 @@
         input.blur();
       });
     });
+    const rippleRow = rows.querySelector('.theme-color-row[data-token="waterRippleColor"]');
+    if (rippleRow) {
+      const rippleInput = rippleRow.querySelector("#theme-ripple-input");
+      const rippleAutoBox = rippleRow.querySelector("#theme-ripple-auto");
+      const syncRippleTheme = () => {
+        renderThemeList();
+        syncThemeJsonFromState();
+        renderThemeSupplementPreview();
+        syncLayoutUiFromState();
+      };
+      const renderRippleRow = () => {
+        const auto = normalizeColorValue(theme.colors?.waterRippleColor) == null;
+        rippleAutoBox.checked = auto;
+        rippleInput.readOnly = auto;
+        rippleInput.value = toArgbHex(resolveThemeRippleColor(theme.colors) ?? 0);
+      };
+      rippleAutoBox.addEventListener("change", () => {
+        if (rippleAutoBox.checked) {
+          theme.colors.waterRippleColor = null;
+          renderRippleRow();
+          syncRippleTheme();
+          setStatus("theme-editor-status", "水波纹颜色改为自动（由 app 按主题计算）", "ok");
+          return;
+        }
+        const seeded = resolveThemeRippleColor(theme.colors) ?? 0;
+        theme.colors.waterRippleColor = seeded;
+        renderRippleRow();
+        rippleInput.focus();
+        syncRippleTheme();
+        setStatus("theme-editor-status", "水波纹颜色改为手动", "ok");
+      });
+      rippleInput.addEventListener("change", () => {
+        const normalized = normalizeColorValue(rippleInput.value.trim());
+        if (normalized == null) {
+          renderRippleRow();
+          setStatus("theme-editor-status", "水波纹颜色格式无效", "err");
+          return;
+        }
+        theme.colors.waterRippleColor = normalized;
+        rippleAutoBox.checked = false;
+        rippleInput.readOnly = false;
+        syncRippleTheme();
+        setStatus("theme-editor-status", "水波纹颜色已更新并同步到预览", "ok");
+      });
+    }
     syncThemeJsonHeight();
   }
 
@@ -2674,6 +2817,24 @@
     return Number.isFinite(n) && n >= 10 && n <= 90 ? Math.round(n) : "";
   }
 
+  function getHeightOverrideLandscape(base = state.selectedBase, submode = state.selectedSubmode) {
+    const meta = getMetaContainer(base, submode, false);
+    const n = Number(meta?.[HEIGHT_KEY_LANDSCAPE]);
+    return Number.isFinite(n) && n >= 10 && n <= 90 ? Math.round(n) : "";
+  }
+
+  function setHeightOverrideLandscape(base, submode, rawValue) {
+    const raw = String(rawValue ?? "").trim();
+    if (!raw) {
+      const meta = getMetaContainer(base, submode, false);
+      if (meta) delete meta[HEIGHT_KEY_LANDSCAPE];
+      return;
+    }
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 10 || n > 90) throw new Error("横屏键盘高度 override 必须是 10..90 的整数");
+    getMetaContainer(base, submode, true)[HEIGHT_KEY_LANDSCAPE] = n;
+  }
+
   function setHeightOverride(base, submode, rawValue) {
     const raw = String(rawValue ?? "").trim();
     if (!raw) {
@@ -2773,6 +2934,13 @@
         throw new Error(`布局 ${name} 的 ${HEIGHT_KEY} 必须是 10..90`);
       }
       meta[HEIGHT_KEY] = Number(n);
+    }
+    const landscape = meta[HEIGHT_KEY_LANDSCAPE];
+    if (landscape != null) {
+      if (!Number.isInteger(Number(landscape)) || Number(landscape) < 10 || Number(landscape) > 90) {
+        throw new Error(`布局 ${name} 的 ${HEIGHT_KEY_LANDSCAPE} 必须是 10..90`);
+      }
+      meta[HEIGHT_KEY_LANDSCAPE] = Number(landscape);
     }
     validateAuxBarMeta(meta[AUX_BAR_KEY], name);
   }
@@ -3026,6 +3194,8 @@
       copySourceNode.value = entryKey(state.selectedBase, state.selectedSubmode);
     }
     el("layout-height-override").value = getHeightOverride();
+    const landscapeInput = el("layout-height-override-landscape");
+    if (landscapeInput) landscapeInput.value = getHeightOverrideLandscape();
   }
 
   function renderLayoutPreview() {
@@ -4785,7 +4955,11 @@
   }
 
   function normalizeLayerMode(raw) {
-    return String(raw || "").toLowerCase() === "osl" ? "osl" : "to";
+    // 与 app 的 LayoutJsonUtils.parseLayerSwitchMode 一致：未知值回落 to
+    const mode = String(raw || "").toLowerCase();
+    if (mode === "osl") return "osl";
+    if (mode === "back") return "back";
+    return "to";
   }
 
   function sanitizeMacroKeys(rawKeys) {
@@ -4953,7 +5127,9 @@
     if (stepType === "layer") {
       const mode = document.createElement("select");
       mode.className = "macro-chip-select";
-      mode.innerHTML = `<option value="to">${macroLayerModeLabels.to}</option><option value="osl">${macroLayerModeLabels.osl}</option>`;
+      mode.innerHTML = Object.entries(macroLayerModeLabels)
+        .map(([value, label]) => `<option value="${escapeAttr(value)}">${escapeHtml(label)}</option>`)
+        .join("");
       mode.value = normalizeLayerMode(step.keys?.[0]?.code);
       const target = document.createElement("select");
       target.className = "macro-chip-select";
@@ -4963,9 +5139,14 @@
       const targets = Array.from(new Set([step.text, ...allEntryKeys(), ...pickerLayerTargets].filter(Boolean)));
       target.innerHTML = targets.map((v) => `<option value="${escapeAttr(v)}">${escapeHtml(pickerLayerTargetLabels[v] || v)}</option>`).join("");
       if (targets.length) target.value = targets.includes(step.text) ? step.text : targets[0];
+      // back（返回上一层）不需要目标，与 app 一致：非 back 时才要求目标
+      target.style.display = mode.value === "back" ? "none" : "";
       step.keys = [{ keyType: "fcitx", code: mode.value }];
       step.text = target.value || "";
-      mode.addEventListener("change", () => { step.keys = [{ keyType: "fcitx", code: normalizeLayerMode(mode.value) }]; });
+      mode.addEventListener("change", () => {
+        step.keys = [{ keyType: "fcitx", code: normalizeLayerMode(mode.value) }];
+        target.style.display = mode.value === "back" ? "none" : "";
+      });
       target.addEventListener("change", () => { step.text = target.value; });
       body.appendChild(mode);
       body.appendChild(target);
@@ -5165,12 +5346,16 @@
       if (step.type === "edit" && !keys.length) return `步骤 ${n} 需要一个编辑动作`;
       if (step.type === "app" && !keys.length) return `步骤 ${n} 需要一个应用动作`;
       if (step.type === "layer") {
-        if (!step.text.trim()) return `步骤 ${n} 需要填写目标布局`;
-        // 白名单 = 布局里的层 + 三个符号面板（后者运行时路由到独立窗口）+ 旧名 Emoticon
-        // （存量配置的 target 就写着它，app 侧 Key.ofName 仍接受，这里也必须放行，
-        //  否则用户一打开旧宏就会被判成「目标布局无效」而存不回去）
-        const targets = [...allEntryKeys(), ...pickerLayerTargets, ...pickerLegacyLayerTargets];
-        if (targets.length && !targets.includes(step.text)) return `步骤 ${n} 的目标布局无效`;
+        const mode = normalizeLayerMode(step.keys?.[0]?.code);
+        // back（返回上一层）不需要目标，与 app 的 MacroEditorActivity 校验一致
+        if (mode !== "back" && !step.text.trim()) return `步骤 ${n} 需要填写目标布局`;
+        if (mode !== "back") {
+          // 白名单 = 布局里的层 + 三个符号面板（后者运行时路由到独立窗口）+ 旧名 Emoticon
+          // （存量配置的 target 就写着它，app 侧 Key.ofName 仍接受，这里也必须放行，
+          //  否则用户一打开旧宏就会被判成「目标布局无效」而存不回去）
+          const targets = [...allEntryKeys(), ...pickerLayerTargets, ...pickerLegacyLayerTargets];
+          if (targets.length && !targets.includes(step.text)) return `步骤 ${n} 的目标布局无效`;
+        }
       }
     }
 
@@ -6550,6 +6735,18 @@
         renderSelectors();
       }
     });
+    const landscapeOverrideInput = el("layout-height-override-landscape");
+    if (landscapeOverrideInput) {
+      landscapeOverrideInput.addEventListener("change", (e) => {
+        try {
+          setHeightOverrideLandscape(state.selectedBase, state.selectedSubmode, e.target.value);
+          syncLayoutUiFromState();
+        } catch (err) {
+          alert(err.message);
+          renderSelectors();
+        }
+      });
+    }
     el("layout-open-aux-bar").addEventListener("click", openAuxBarDialog);
     el("layout-aux-bar-position").addEventListener("change", updateAuxBarDialogFieldVisibility);
     const auxSizeRange = el("layout-aux-bar-size");
@@ -6857,14 +7054,20 @@
 
   function currentThemeQrPayload() {
     const theme = serializeCurrentTheme();
+    // 与 app 端 ThemeQrTransferCodec.encodeThemeToChunks 对齐：
+    // theme 字符串 = CustomThemeSerializer 输出的扁平 JSON（带 version，backgroundImage 为对象）
+    const themeJson = {
+      name: theme.name,
+      isDark: theme.isDark,
+      version: APP_THEME_VERSION,
+      backgroundImage: theme.backgroundImage && typeof theme.backgroundImage === "object"
+        ? theme.backgroundImage
+        : null,
+      ...buildAppThemeColorFields(theme.colors)
+    };
     const payload = {
       schema: "f5a-theme-qr-v1",
-      theme: JSON.stringify({
-        name: theme.name,
-        isDark: theme.isDark,
-        backgroundImage: theme.backgroundImage || "",
-        ...theme.colors
-      })
+      theme: JSON.stringify(themeJson)
     };
     return { json: `${prettyJson(payload)}\n` };
   }
@@ -6903,7 +7106,9 @@
       ? "Theme"
       : transferType === TRANSFER_TYPE_POPUP
         ? "Popup"
-        : "Layout";
+        : transferType === TRANSFER_TYPE_ICON_THEME
+          ? "IconTheme"
+          : "Layout";
     const profilePart = transferType === TRANSFER_TYPE_LAYOUT ? ` · ${displayProfile(profile)}` : "";
     return bundle.chunks.map((_, i) => `${label}${profilePart} · Chunk ${i + 1}/${bundle.total} · ${bundle.transferId}`);
   }
@@ -7259,7 +7464,9 @@
       ? "text-keyboard-theme-qr"
       : transferType === TRANSFER_TYPE_POPUP
         ? "popup-preset-qr"
-        : "text-keyboard-layout-qr";
+        : transferType === TRANSFER_TYPE_ICON_THEME
+          ? "icon-theme-qr"
+          : "text-keyboard-layout-qr";
     const fileName = `${prefix}-${Date.now()}.png`;
     downloadBlob(fileName, blob);
   }
@@ -7541,6 +7748,7 @@
     const exportTheme = {
       name: theme.name,
       isDark: !!theme.isDark,
+      version: APP_THEME_VERSION,
       backgroundImage: {
         croppedFilePath: spec.croppedFilePath,
         srcFilePath: spec.srcFilePath,
@@ -7549,7 +7757,7 @@
         cropRotation: Number.isFinite(Number(spec.cropRotation)) ? Number(spec.cropRotation) : 0,
         blurRadius: Number.isFinite(Number(spec.blurRadius)) ? Number(spec.blurRadius) : 0
       },
-      ...deepClone(theme.colors)
+      ...buildAppThemeColorFields(theme.colors)
     };
     const zip = new window.JSZip();
     zip.file(`${baseName}.json`, `${prettyJson(exportTheme)}\n`);
@@ -8179,8 +8387,9 @@
     const payload = {
       name: current.name,
       isDark: !!current.isDark,
+      version: APP_THEME_VERSION,
       ...(current.backgroundImageObject ? { backgroundImage: deepClone(current.backgroundImageObject) } : { backgroundImage: null }),
-      ...deepClone(current.colors)
+      ...buildAppThemeColorFields(current.colors)
     };
     const oldName = (typeof current.imeOriginalName === "string" && current.imeOriginalName !== current.name)
       ? current.imeOriginalName
@@ -8712,6 +8921,12 @@
     "keys.unicode": `<svg viewBox="0 0 24 24" width="20" height="20"><text x="4" y="18" font-size="16" font-weight="bold" fill="currentColor">U</text></svg>`,
     "keys.pageup": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6 1.41 1.41z"/></svg>`,
     "keys.pagedown": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>`,
+    "keys.cursor_up": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6 1.41 1.41z"/></svg>`,
+    "keys.cursor_down": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z"/></svg>`,
+    "keys.cursor_left": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M15.41 7.41L10.83 12l4.58 4.59L14 18l-6-6 6-6 1.41 1.41z"/></svg>`,
+    "keys.cursor_right": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/></svg>`,
+    "keys.home": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M18.41 16.59L13.82 12l4.59-4.59L17 6l-6 6 6 6 1.41-1.41zM6 6h2v12H6V6z"/></svg>`,
+    "keys.end": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M5.59 7.41L10.18 12l-4.59 4.59L7 18l6-6-6-6-1.41 1.41zM16 6h2v12h-2V6z"/></svg>`,
     "toolbar.undo": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>`,
     "toolbar.redo": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg>`,
     "toolbar.cursor_move": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="m17,16 l4,-4L17,8Z M7,8 l-4,4 4,4z M8,3v2h3.0137V19H8v2h3.0137,2H16V19H13.0137V5H16V3h-2.9863,-2z"/></svg>`,
@@ -8755,6 +8970,22 @@
       version: theme.version || 1, thumbnailSvg: theme.thumbnailSvg || null,
       icons: deepClone(theme.icons || {})
     };
+  }
+
+  // 文件 / ZIP / 二维码使用 app 端 kotlinx @SerialName 名 thumbnail_svg；
+  // REST 桥接（GET/PUT /api/v1/icon-theme）则用 thumbnailSvg，两条通道不要混
+  function serializeIconThemeForAppFile(theme = currentIconThemeEntry()) {
+    return {
+      name: theme.name, author: theme.author || "",
+      version: theme.version || 1, thumbnail_svg: theme.thumbnailSvg || null,
+      icons: deepClone(theme.icons || {})
+    };
+  }
+
+  // app 导出的文件用 thumbnail_svg，旧版网页导出用 thumbnailSvg，两者都认
+  function readIconThemeThumbnail(parsed) {
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed.thumbnail_svg || parsed.thumbnailSvg || null;
   }
 
   function syncIconThemeJsonFromState() {
@@ -9008,13 +9239,8 @@
       }
     }
 
-    const exportTheme = {
-      name: theme.name,
-      author: theme.author || "",
-      version: theme.version || 1,
-      thumbnailSvg: theme.thumbnailSvg || null,
-      icons: exportIcons
-    };
+    const exportTheme = serializeIconThemeForAppFile(theme);
+    exportTheme.icons = exportIcons;
 
     // JSON entry
     zip.file(`${safeName}.json`, JSON.stringify(exportTheme, null, 2));
@@ -9082,7 +9308,7 @@
       author: parsed.author || "",
       version: parsed.version || 1,
       builtin: false,
-      thumbnailSvg: parsed.thumbnailSvg || null,
+      thumbnailSvg: readIconThemeThumbnail(parsed),
       icons
     };
     state.iconThemeCatalog.unshift(theme);
@@ -9092,8 +9318,163 @@
     return theme;
   }
 
-  // ── QR Share (to be implemented) ──
-  // The app uses schema "f5a-icon-theme-qr-v1" with transfer type "I"
+  // ── QR Share ──
+  // 与 app 端 IconThemeQrTransferCodec 对齐：schema "f5a-icon-theme-qr-v1"、
+  // 载荷 iconTheme 为 kotlinx @SerialName 形式（thumbnail_svg），缩略图剥离（同 app）
+
+  function currentIconThemeQrPayload() {
+    const theme = serializeIconThemeForAppFile();
+    delete theme.thumbnail_svg;
+    const payload = {
+      schema: "f5a-icon-theme-qr-v1",
+      iconTheme: theme
+    };
+    return { json: `${prettyJson(payload)}\n` };
+  }
+
+  async function generateIconThemeQrBundle() {
+    const payload = currentIconThemeQrPayload();
+    return await encodeJsonToChunks(payload.json, null, TRANSFER_TYPE_ICON_THEME);
+  }
+
+  function buildImportedIconThemeEntry(parsed) {
+    return {
+      id: `custom-${generateIconThemeUuid()}`,
+      name: nextIconThemeName(parsed.name || "Imported"),
+      author: parsed.author || "",
+      version: parsed.version || 1,
+      builtin: false,
+      thumbnailSvg: readIconThemeThumbnail(parsed),
+      icons: deepClone(parsed.icons && typeof parsed.icons === "object" ? parsed.icons : {})
+    };
+  }
+
+  async function decodeIconThemeFromQrChunks(chunkTexts) {
+    const decoded = await decodeQrChunksToJson(chunkTexts, TRANSFER_TYPE_ICON_THEME);
+    const raw = JSON.parse(decoded.text);
+    if (raw && raw.schema && raw.schema !== "f5a-icon-theme-qr-v1") {
+      throw new Error(`不支持的图标主题二维码 schema：${raw.schema}`);
+    }
+    const iconTheme = raw && typeof raw.iconTheme === "object" ? raw.iconTheme : null;
+    if (!iconTheme) throw new Error("图标主题二维码载荷无效：缺少 iconTheme");
+    return { themeData: iconTheme, transferId: decoded.transferId, total: decoded.total };
+  }
+
+  async function importIconThemeFromQrLongImage(file) {
+    if (!file) return;
+    state.iconThemeQr = { chunks: [], index: 0, transferId: "" };
+    updateIconThemeQrUi();
+    setStatus("icon-theme-qr-meta", "正在读取图标主题二维码长图…", "");
+    const image = await readFileAsImage(file);
+    const chunkTexts = await decodeQrTextFromImage(image, (msg) => setStatus("icon-theme-qr-meta", msg, ""));
+    if (!chunkTexts.length) throw new Error("未识别到有效二维码分片，请确认长图完整清晰");
+    setStatus("icon-theme-qr-meta", "正在校验并解码图标主题分片…", "");
+    const decoded = await decodeIconThemeFromQrChunks(chunkTexts);
+    const ok = confirm(`确认导入图标主题「${decoded.themeData.name || "Imported"}」？\ntransferId=${decoded.transferId}\n分片数=${decoded.total}`);
+    if (!ok) return;
+    const theme = buildImportedIconThemeEntry(decoded.themeData);
+    state.iconThemeCatalog.unshift(theme);
+    state.selectedIconThemeId = theme.id;
+    renderIconThemeEditor();
+    syncIconThemeJsonFromState();
+    state.iconThemeQr = { chunks: [], index: 0, transferId: "" };
+    updateIconThemeQrUi();
+    setStatus("icon-theme-editor-status", `已导入图标主题：${theme.name}`, "ok");
+    setStatus("icon-theme-qr-meta", `导入成功：${decoded.total} 个分片，transferId=${decoded.transferId}`, "ok");
+  }
+
+  function updateIconThemeQrUi() {
+    const has = state.iconThemeQr.chunks.length > 0;
+    const idx = el("icon-theme-qr-index");
+    if (idx) idx.textContent = `${has ? state.iconThemeQr.index + 1 : 0} / ${state.iconThemeQr.chunks.length}`;
+    const canvas = el("icon-theme-qr-canvas");
+    if (!canvas) return;
+    // 自适应尺寸：最大为窗口宽高的80%，最小320，最大720
+    const size = Math.max(320, Math.min(720, Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.8)));
+    canvas.width = size;
+    canvas.height = size;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!has) return;
+    const filled = makeQrCanvas(state.iconThemeQr.chunks[state.iconThemeQr.index], canvas.width);
+    ctx.drawImage(filled, 0, 0);
+  }
+
+  function openIconThemeQrPreviewDialog() {
+    const dialog = el("icon-theme-qr-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+
+  function setupIconThemeQrActions() {
+    el("icon-theme-generate-qr").addEventListener("click", async () => {
+      try {
+        const bundle = await generateIconThemeQrBundle();
+        state.iconThemeQr = {
+          chunks: bundle.chunks,
+          index: 0,
+          transferId: bundle.transferId
+        };
+        setStatus("icon-theme-qr-meta", `图标主题二维码：${bundle.total} 个分片，transferId=${bundle.transferId}`, "ok");
+        updateIconThemeQrUi();
+        openIconThemeQrPreviewDialog();
+      } catch (e) {
+        setStatus("icon-theme-qr-meta", `生成失败：${e.message}`, "err");
+      }
+    });
+    el("icon-theme-download-qr-preview").addEventListener("click", async () => {
+      if (!state.iconThemeQr.chunks.length) {
+        setStatus("icon-theme-qr-meta", "请先生成图标主题二维码", "err");
+        return;
+      }
+      try {
+        const bundle = {
+          chunks: state.iconThemeQr.chunks.slice(),
+          total: state.iconThemeQr.chunks.length,
+          transferId: state.iconThemeQr.transferId
+        };
+        await downloadQrLongImage(bundle, null, TRANSFER_TYPE_ICON_THEME);
+        setStatus("icon-theme-qr-meta", `已下载图标主题二维码长图：${bundle.total} 个分片`, "ok");
+      } catch (e) {
+        setStatus("icon-theme-qr-meta", `长图导出失败：${e.message}`, "err");
+      }
+    });
+    el("icon-theme-prev-qr").addEventListener("click", () => {
+      if (!state.iconThemeQr.chunks.length) return;
+      state.iconThemeQr.index = (state.iconThemeQr.index - 1 + state.iconThemeQr.chunks.length) % state.iconThemeQr.chunks.length;
+      updateIconThemeQrUi();
+    });
+    el("icon-theme-next-qr").addEventListener("click", () => {
+      if (!state.iconThemeQr.chunks.length) return;
+      state.iconThemeQr.index = (state.iconThemeQr.index + 1) % state.iconThemeQr.chunks.length;
+      updateIconThemeQrUi();
+    });
+    el("icon-theme-import-qr-image").addEventListener("click", () => {
+      const input = el("icon-theme-import-qr-image-file");
+      if (!input) return;
+      input.value = "";
+      input.click();
+    });
+    el("icon-theme-import-qr-image-file").addEventListener("change", async (ev) => {
+      const file = ev.target && ev.target.files ? ev.target.files[0] : null;
+      if (!file) return;
+      if (state.iconThemeImportRunning) {
+        setStatus("icon-theme-qr-meta", "已有导入任务在进行，请稍后重试", "err");
+        return;
+      }
+      state.iconThemeImportRunning = true;
+      try {
+        await importIconThemeFromQrLongImage(file);
+      } catch (e) {
+        setStatus("icon-theme-qr-meta", `导入失败：${e.message}`, "err");
+      } finally {
+        state.iconThemeImportRunning = false;
+        const input = el("icon-theme-import-qr-image-file");
+        if (input) input.value = "";
+      }
+    });
+  }
 
   function initIconThemeTab() {
     el("icon-theme-create-new").addEventListener("click", () => {
@@ -9134,7 +9515,7 @@
 
     el("icon-theme-export-json").addEventListener("click", () => {
       const theme = currentIconThemeEntry();
-      downloadFile(`${theme.name}.icon-theme.json`, `${prettyJson(serializeCurrentIconTheme())}\n`);
+      downloadFile(`${theme.name}.icon-theme.json`, `${prettyJson(serializeIconThemeForAppFile(theme))}\n`);
       setStatus("icon-theme-editor-status", `已导出 JSON：${theme.name}`, "ok");
     });
 
@@ -9152,7 +9533,7 @@
         const theme = {
           id: `custom-${generateIconThemeUuid()}`, name: nextIconThemeName(parsed.name || "Imported"),
           author: parsed.author || "", version: parsed.version || 1, builtin: false,
-          thumbnailSvg: parsed.thumbnailSvg || null, icons: parsed.icons || {}
+          thumbnailSvg: readIconThemeThumbnail(parsed), icons: parsed.icons || {}
         };
         state.iconThemeCatalog.unshift(theme);
         state.selectedIconThemeId = theme.id;
@@ -9252,6 +9633,7 @@
     setupQrActions();
     setupThemeQrActions();
     setupPopupQrActions();
+    setupIconThemeQrActions();
     setupThemeAppSyncUi();
     setupImeBridgeActions();
     await autoLoadImeDataOnStartup();

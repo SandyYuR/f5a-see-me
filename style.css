@@ -692,6 +692,21 @@ input[type="checkbox"] {
   display: block;
 }
 
+.theme-ripple-auto {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--sub);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.theme-ripple-auto input {
+  accent-color: var(--primary);
+}
+
 .theme-color-input {
   width: 100%;
 }
