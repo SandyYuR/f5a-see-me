@@ -51,9 +51,15 @@
   const LONG_IMAGE_TEXT_GAP = 12;
   const LONG_IMAGE_PREVIEW_PADDING = 10;
   const LONG_IMAGE_PREVIEW_ROW_GAP = 8;
-  const LONG_IMAGE_PREVIEW_KEYBOARD_MAX_WIDTH = 720;
+  const LONG_IMAGE_PREVIEW_KEYBOARD_MAX_WIDTH = 576;
+  const LIVE_PREVIEW_KEYBOARD_MAX_WIDTH = 576;
+  const LIVE_PREVIEW_SPLIT_MAX_WIDTH = 1228;
   const DEFAULT_SUBMODE = "default";
   const META_KEY = "__meta__";
+  // 分体布局变体条目（app fx-rime-only 分支）：写在子布局 map 内的 "__variant__:split" 键，
+  // 值为行数组或 {__meta__, default}；回退链 Split → [Split, Docked]
+  const VARIANT_SUBMODE_PREFIX = "__variant__:";
+  const SPLIT_VARIANT_KEY = "split";
   const HEIGHT_KEY = "keyboard_height_percent";
   // 横屏专用键盘高度（app 端 2026-07 起支持，与纵向高度同在 __meta__，10..90）
   const HEIGHT_KEY_LANDSCAPE = "keyboard_height_percent_landscape";
@@ -122,8 +128,29 @@
   const keyTypes = [
     "AlphabetKey", "CapsKey", "LayoutSwitchKey", "CommaKey", "LanguageKey",
     "SpaceKey", "SymbolKey", "ReturnKey", "BackspaceKey", "MacroKey",
-    "NumPadKey", "MiniSpaceKey"
+    "NumPadKey", "MiniSpaceKey", "PlaceholderKey"
   ];
+
+  const keyTypeLabels = Object.freeze({
+    AlphabetKey: "字母键（AlphabetKey）",
+    CapsKey: "大写锁定键（CapsKey）",
+    LayoutSwitchKey: "布局切换键（LayoutSwitchKey）",
+    CommaKey: "逗号键（CommaKey）",
+    LanguageKey: "语言切换键（LanguageKey）",
+    SpaceKey: "空格键（SpaceKey）",
+    SymbolKey: "符号键（SymbolKey）",
+    ReturnKey: "回车键（ReturnKey）",
+    BackspaceKey: "退格键（BackspaceKey）",
+    MacroKey: "宏按键（MacroKey）",
+    NumPadKey: "数字键盘键（NumPadKey）",
+    MiniSpaceKey: "迷你空格键（MiniSpaceKey）",
+    PlaceholderKey: "空白占位键（PlaceholderKey）"
+  });
+
+  function keyTypeLabel(type) {
+    const name = String(type || "").trim();
+    return keyTypeLabels[name] || (name ? `未知按键（${name}）` : "未知按键");
+  }
 
   // NumPadKey 符号选项（label 为按键显示，sym 为保存到 JSON 的规范 Fcitx 键名），
   // 与 fcitx5-android 编辑器（KeyboardEditorUiBuilder.NUMPAD_OPTIONS）一致。
@@ -356,15 +383,18 @@
   };
   // 切层模式与 app 的 KeyAction.LayerSwitchMode 一致：to=固定切换、osl=单次层、back=返回上一层
   const macroLayerModeLabels = { to: "切换到层", osl: "单次层", back: "返回上一层" };
+  // 与 fx-rime-only 分支 ButtonAction.allActions 一致：无 settings_plugin，
+  // 新增 switch_input_method（系统输入法选择器）与 rime_schema_menu（Rime 方案菜单）
   const macroAppActions = [
     "theme", "theme_toggle", "icon_theme", "virtual_keyboard", "more",
     "browse_user_data_dir", "clipboard", "cursor_move", "floating_toggle",
     "language_switch", "reload_config", "one_handed_keyboard", "input_method_options",
     "undo", "redo",
     "settings_global_options", "settings_input_methods", "settings_candidates_window",
-    "settings_clipboard", "settings_symbol", "settings_plugin", "settings_advanced",
+    "settings_clipboard", "settings_symbol", "settings_advanced",
     "settings_developer", "settings_about", "settings_license",
-    "edit_text_keyboard_layout", "text_keyboard_layout_file_select", "edit_fontset"
+    "edit_text_keyboard_layout", "text_keyboard_layout_file_select", "edit_fontset",
+    "switch_input_method", "rime_schema_menu"
   ];
   const macroAppActionLabels = {
     theme: "主题",
@@ -387,14 +417,15 @@
     settings_candidates_window: "候选窗口",
     settings_clipboard: "剪贴板",
     settings_symbol: "表情和符号",
-    settings_plugin: "插件",
     settings_advanced: "高级",
     settings_developer: "开发者",
     settings_about: "关于",
     settings_license: "许可",
     edit_text_keyboard_layout: "编辑文本键盘布局",
     text_keyboard_layout_file_select: "文本键盘布局文件",
-    edit_fontset: "编辑字体集"
+    edit_fontset: "编辑字体集",
+    switch_input_method: "切换系统输入法",
+    rime_schema_menu: "Rime 方案菜单"
   };
   const macroModifierKeys = new Set([
     "Ctrl_L", "Ctrl_R", "Alt_L", "Alt_R", "Shift_L", "Shift_R",
@@ -469,7 +500,7 @@
     "keys.backspace",
     "keys.return.default", "keys.return.go", "keys.return.search",
     "keys.return.send", "keys.return.next", "keys.return.previous", "keys.return.done",
-    "keys.language", "keys.quickphrase", "keys.space",
+    "keys.language", "keys.space",
     "keys.numpad", "keys.emoji", "keys.symbols", "keys.unicode",
     "keys.pageup", "keys.pagedown",
     "keys.cursor_up", "keys.cursor_down", "keys.cursor_left", "keys.cursor_right",
@@ -530,6 +561,10 @@
     activeTab: "tab-layout",
     selectedBase: "default",
     selectedSubmode: DEFAULT_SUBMODE,
+    // 分体布局编辑态：勾选「分体键盘布局」后，行编辑/预览/保存都作用于当前条目的
+    // __variant__:split（app fx-rime-only 的 LayoutVariant.Split）
+    editingSplit: false,
+     previewSplit: false,
     suppressLayoutJsonInput: false,
     wasmReady: false,
     wasmInitPromise: null,
@@ -603,14 +638,13 @@
       borderOutline: false,
       gboardStyle: false,
       keyHGap: 3,
-      keyVGap: 3,
-      keyRadius: 4,
+      keyVGap: 4,
+      keyRadius: 6,
       punctPos: 'bottom',
-      // 分体键盘（与 app 的 split_keyboard_* 偏好对应；连 IME 时由 /api/v1/theme/prefs 覆盖）
-      splitEnabled: false,
+      // 分体键盘预览参数（中缝宽度对应 app 的 split_keyboard_gap_percent；
+      // 对齐开关对应 split_keyboard_align_halves，默认开）。variant 布局本体走布局 JSON。
       splitGapPercent: 20,
-      splitThreshold: 470,
-      splitUseLandscape: false,
+      splitAlignHalves: true,
       previewMetrics: null
     },
     themeCrop: {
@@ -2763,11 +2797,13 @@
     const v = layout[base];
     if (isRows(v)) return [DEFAULT_SUBMODE];
     if (!v || typeof v !== "object" || Array.isArray(v)) return [];
-    return Object.keys(v).filter((k) => k !== META_KEY).sort((a, b) => {
-      if (a === DEFAULT_SUBMODE) return -1;
-      if (b === DEFAULT_SUBMODE) return 1;
-      return a.localeCompare(b);
-    });
+    return Object.keys(v)
+      .filter((k) => k !== META_KEY && !isVariantSubLayoutKey(k))
+      .sort((a, b) => {
+        if (a === DEFAULT_SUBMODE) return -1;
+        if (b === DEFAULT_SUBMODE) return 1;
+        return a.localeCompare(b);
+      });
   }
 
   function entryKey(base, submode) {
@@ -2775,13 +2811,85 @@
   }
 
   function allEntryKeys() {
+    // 宏切层目标白名单：分体变体条目（__variant__:split）是子布局的属性而非方案，不作目标
     return baseNames().flatMap((base) => submodeNames(base).map((sub) => entryKey(base, sub)));
   }
 
   function parseEntryKey(key) {
+    // 与 app 的 LayoutJsonUtils.parseEntryKey 一致：先剥 __variant__: 前缀，再按第一个冒号切
+    const marker = `:${VARIANT_SUBMODE_PREFIX}`;
+    const markerIndex = key.indexOf(marker);
+    if (markerIndex >= 0) {
+      const variantKey = key.slice(markerIndex + marker.length);
+      const head = key.slice(0, markerIndex);
+      if (variantKey === SPLIT_VARIANT_KEY) {
+        const idx = head.indexOf(":");
+        if (idx < 0) return { base: head, submode: DEFAULT_SUBMODE, variant: variantKey };
+        return { base: head.slice(0, idx), submode: head.slice(idx + 1) || DEFAULT_SUBMODE, variant: variantKey };
+      }
+    }
     const idx = key.indexOf(":");
     if (idx < 0) return { base: key, submode: DEFAULT_SUBMODE };
     return { base: key.slice(0, idx), submode: key.slice(idx + 1) || DEFAULT_SUBMODE };
+  }
+
+  function isVariantSubLayoutKey(key) {
+    return String(key).startsWith(VARIANT_SUBMODE_PREFIX);
+  }
+
+  // 读取某条目（base+submode）的分体变体行；不存在时返回 null（调用方回退 docked）
+  function getVariantRows(base, submode) {
+    const v = state.layout[base];
+    if (!v || typeof v !== "object" || isRows(v)) return null;
+    const container = submode === DEFAULT_SUBMODE ? v : v[submode];
+    if (!container || typeof container !== "object" || Array.isArray(container)) return null;
+    const raw = container[VARIANT_SUBMODE_PREFIX + SPLIT_VARIANT_KEY];
+    if (isRows(raw)) return raw;
+    // variant 条目也可能是 {__meta__, default} 形态
+    if (raw && typeof raw === "object" && isRows(raw.default)) return raw.default;
+    // 不存在时必须返回 null（而非空数组），否则 hasVariantRows 误判、编辑态读到空行
+    return null;
+  }
+
+  // 读取普通（docked）行，忽略分体编辑态
+  function getRowsDockedRows(base, submode) {
+    const v = state.layout[base];
+    if (isRows(v)) return v;
+    if (!v || typeof v !== "object") return [];
+    return unwrapRows(v[submode] ?? v.default ?? v[""]);
+  }
+
+  function hasVariantRows(base, submode) {
+    return getVariantRows(base, submode) != null;
+  }
+
+  // 写入分体变体行。布局本体是扁平数组时先升格为 { default: rows } 结构
+  function setVariantRows(base, submode, rows) {
+    let v = state.layout[base];
+    if (!v || typeof v !== "object" || isRows(v)) {
+      v = { default: isRows(v) ? v : [] };
+      state.layout[base] = v;
+    }
+    const containerKey = submode === DEFAULT_SUBMODE ? null : submode;
+    let container;
+    if (!containerKey) {
+      container = v;
+    } else {
+      if (!v[containerKey] || isRows(v[containerKey])) {
+        v[containerKey] = { default: isRows(v[containerKey]) ? v[containerKey] : [] };
+      }
+      container = v[containerKey];
+    }
+    container[VARIANT_SUBMODE_PREFIX + SPLIT_VARIANT_KEY] = rows;
+  }
+
+  function deleteVariantRows(base, submode) {
+    const v = state.layout[base];
+    if (!v || typeof v !== "object") return;
+    const container = submode === DEFAULT_SUBMODE ? v : v[submode];
+    if (container && typeof container === "object" && !Array.isArray(container)) {
+      delete container[VARIANT_SUBMODE_PREFIX + SPLIT_VARIANT_KEY];
+    }
   }
 
   function buildMonetResourceIds() {
@@ -2819,6 +2927,11 @@
   }
 
   function getRows(base = state.selectedBase, submode = state.selectedSubmode) {
+    // 分体编辑态：读写当前条目的 __variant__:split 行（回退链 Split → [Split, Docked]）
+    if (state.editingSplit) {
+      const variantRows = getVariantRows(base, submode);
+      if (variantRows) return variantRows;
+    }
     const v = state.layout[base];
     if (isRows(v)) return v;
     if (!v || typeof v !== "object") return [];
@@ -2831,6 +2944,10 @@
   }
 
   function setRows(base, submode, rows) {
+    if (state.editingSplit) {
+      setVariantRows(base, submode, rows);
+      return;
+    }
     if (submode === DEFAULT_SUBMODE) {
       const existing = state.layout[base];
       if (isRows(existing) || !existing || typeof existing !== "object") {
@@ -2847,6 +2964,29 @@
   }
 
   function getMetaContainer(base, submode = state.selectedSubmode, create = false) {
+    // 分体编辑态：读写 variant 条目自己的 __meta__（app 端 variant 条目可带 meta）
+    if (state.editingSplit) {
+      const v0 = state.layout[base];
+      const containerKey0 = submode === DEFAULT_SUBMODE ? null : submode;
+      let container0;
+      if (!containerKey0) {
+        container0 = v0;
+      } else if (v0 && typeof v0 === "object" && !isRows(v0)) {
+        container0 = v0[containerKey0];
+      }
+      if (!container0 || typeof container0 !== "object" || Array.isArray(container0)) return null;
+      if (isRows(container0[VARIANT_SUBMODE_PREFIX + SPLIT_VARIANT_KEY])) {
+        if (!create) return null;
+        container0[VARIANT_SUBMODE_PREFIX + SPLIT_VARIANT_KEY] = {
+          default: container0[VARIANT_SUBMODE_PREFIX + SPLIT_VARIANT_KEY],
+          [META_KEY]: {}
+        };
+      }
+      const raw0 = container0[VARIANT_SUBMODE_PREFIX + SPLIT_VARIANT_KEY];
+      if (!raw0 || typeof raw0 !== "object") return null;
+      if (!raw0[META_KEY] && create) raw0[META_KEY] = {};
+      return raw0[META_KEY] || null;
+    }
     const v = state.layout[base];
     if (submode === DEFAULT_SUBMODE) {
       if (isRows(v)) {
@@ -2915,11 +3055,21 @@
       if (isRows(v)) {
         validateRows(v, base);
       } else if (v && typeof v === "object" && !Array.isArray(v)) {
-        const subs = Object.keys(v).filter((k) => k !== META_KEY);
-        if (!subs.length) throw new Error(`布局 ${base} 至少需要一个子模式`);
+        const subs = Object.keys(v).filter((k) => k !== META_KEY && !isVariantSubLayoutKey(k));
+        const variantKeys = Object.keys(v).filter(isVariantSubLayoutKey);
+        if (!subs.length && !variantKeys.length) throw new Error(`布局 ${base} 至少需要一个子模式`);
         subs.forEach((sub) => {
           const rows = unwrapRows(v[sub]);
           validateRows(rows, entryKey(base, sub));
+        });
+        // 分体变体条目（__variant__:split）：行数组或 {__meta__, default}
+        variantKeys.forEach((variantKey) => {
+          const rows = unwrapRows(v[variantKey]);
+          validateRows(rows, `${entryKey(base, "")}${variantKey}`);
+          const variantMeta = v[variantKey] && typeof v[variantKey] === "object" && !Array.isArray(v[variantKey])
+            ? v[variantKey][META_KEY]
+            : null;
+          if (variantMeta) validateMeta(variantMeta, `${base}${variantKey}`);
         });
         validateMeta(v[META_KEY], base);
       } else {
@@ -2971,6 +3121,17 @@
       if (!key.label || typeof key.label !== "string" || !key.label.trim()) {
         key.label = numpadSymLabelByName[resolved] || "0";
       }
+    }
+
+    // PlaceholderKey：transparent 仅在显式 false（画底）时保留；缺省 = 完全透明
+    // （app 序列化同样只在 false 时写 "transparent": false，字段缺失即默认形态）
+    if (type === "PlaceholderKey") {
+      if (key.transparent !== false) delete key.transparent;
+      // splitAfter 是分体断点标记，占位键不承载内容，无意义
+      delete key.splitAfter;
+    } else {
+      delete key.transparent;
+      if (key.splitAfter !== true) delete key.splitAfter;
     }
 
     const availableColorKeys = new Set();
@@ -3136,6 +3297,14 @@
     }
   }
 
+  function syncSplitModeCheckbox() {
+    const box = el("layout-split-mode");
+    if (!box) return;
+    box.checked = !!state.editingSplit;
+    const addBtn = el("layout-add-layout");
+    if (addBtn) addBtn.disabled = !!state.editingSplit;
+  }
+
   function ensureSelection() {
     const bases = baseNames();
     if (!bases.includes(state.selectedBase)) state.selectedBase = bases[0] || "default";
@@ -3152,6 +3321,7 @@
       }
     }
     switch (key.type) {
+      case "PlaceholderKey": return key.main || key.alt || "";
       case "CapsKey": return "⇧";
       case "LayoutSwitchKey": return key.label || "?123";
       case "LayerSwitchKey": return key.label || "?123";
@@ -3203,9 +3373,27 @@
   function keySubText(key) {
     if (!key || typeof key !== "object") return "";
     if (key.type === "AlphabetKey") return key.alt || "";
+    if (key.type === "PlaceholderKey") return key.alt || "";
     if (key.type === "MacroKey") return key.altLabel || key.longPressLabel || "";
     if (key.swipeLabel) return key.swipeLabel;
     return "";
+  }
+
+  // 分体预览：奇数字符行复制几何中间键（app splitKeyboardDuplicateMiddleKey 默认开）。
+  // 复制键带 __dupOf 指回原键下标，点击编辑仍落到原键。
+  function duplicateMiddleKeyForPreview(row) {
+    if (!row || row.length < 3 || row.length % 2 === 0) return row;
+    if (row.some((k) => k.type === "SpaceKey" || k.type === "MiniSpaceKey")) return row;
+    if (row.some((k) => k.splitAfter === true)) return row;
+    const midIndex = Math.floor(row.length / 2);
+    const mid = row[midIndex];
+    const pureCharMacro = mid.type === "MacroKey" && (() => {
+      const steps = mid?.tap?.macro || [];
+      return steps.length > 0 && steps.every((s) => s.type === "text" || s.type === "tap");
+    })();
+    if (mid.type !== "AlphabetKey" && !pureCharMacro) return row;
+    const copy = { ...mid, __dupOf: midIndex };
+    return [...row.slice(0, midIndex + 1), copy, ...row.slice(midIndex + 1)];
   }
 
   function previewMainFontMaxForKey(key) {
@@ -3255,15 +3443,17 @@
     el("layout-height-override").value = getHeightOverride();
     const landscapeInput = el("layout-height-override-landscape");
     if (landscapeInput) landscapeInput.value = getHeightOverrideLandscape();
+    syncSplitModeCheckbox();
   }
 
-  // 键盘高度 override 的缩放系数：相对基准百分比（有 IME 量测时用其记录的百分比，否则用 app 默认 30%）
-  function resolvePreviewHeightScale(previewMetrics) {
-    const override = Number(getHeightOverride());
+  // 键盘高度 override 的缩放系数：相对当前方向的基准百分比
+  function resolvePreviewHeightScale(previewMetrics, landscape = false) {
+    const override = Number(landscape ? getHeightOverrideLandscape() : getHeightOverride());
     if (!Number.isFinite(override) || override <= 0) return 1;
+    const defaultPercent = landscape ? 49 : 30;
     const base = previewMetrics && Number(previewMetrics.keyboardHeightPercent) > 0
       ? Number(previewMetrics.keyboardHeightPercent)
-      : 30;
+      : defaultPercent;
     return Math.min(3, Math.max(0.3, override / base));
   }
 
@@ -3272,18 +3462,33 @@
   //   其余键按 splitScale 缩放，溢出时先压弹性键再压固定键，桥接键过宽时反哺两侧
   // - 无桥接：取最接近中线的边界切开，两侧等比缩到 (1-gap)/2，中间留空缝
   //   （app 端此处对弹性键有最低占比保护，预览按简单等比近似）
-  function resolveSplitRowLayout(row, gapFrac) {
+  // ── 分体行宽计算（对齐 fx-rime-only 分支 BaseKeyboard.buildSplitRow + SplitRowWidths）──
+  // - 行中间有空格桥接键且弹性键 ≤1：中缝并入桥接空格键（bridgeWidth 含溢出压缩与反哺）
+  // - 否则取断点：splitAfter 手动标记（最后一个）优先，否则用「只看承载键」的宽度向量
+  //   选累计宽度最接近中线的边界（空格键相邻边界享 0.06 容差）
+  // - 中缝对齐（默认开）：两侧各缩到 (1-gap)/2；侧内弹性键保留 30%..55% 份额
+  // - 关闭对齐：承载键按「池内」归一化 × (1-gap)（占位键不进池，加占位键不挤压其它键），
+  //   占位键按绝对宽 × (1-gap) 位移；两侧之和超 1-2% 时 fitSides 等比压窄保底
+  function resolveSplitRowLayout(row, gapFrac, alignHalves) {
     if (!row || row.length < 2) return null;
-    const widths = resolveRegularRowWidths(row);
-    if (!widths.length) return null;
     const keyWeightOf = (key) => {
       const n = Number(key?.weight);
       return Number.isFinite(n) && n > 0 ? n : 0;
     };
-    const flexCount = row.filter((key) => keyWeightOf(key) <= 0).length;
-    const spaceIdx = row.findIndex((key) => key.type === "SpaceKey" || key.type === "MiniSpaceKey");
-    const bridgeIndex = spaceIdx >= 1 && spaceIdx <= row.length - 2 && flexCount <= 1 ? spaceIdx : -1;
+    const isPlaceholder = (key) => key?.type === "PlaceholderKey";
+    const fixedSum = row.reduce((a, k) => a + (keyWeightOf(k) || 0), 0);
+    const flexCount = row.filter((k) => keyWeightOf(k) <= 0).length;
+    const remaining = Math.max(0, 1 - fixedSum);
+    const flexWidth = flexCount > 0 ? remaining / flexCount : 0;
+    const absoluteWidths = row.map((k) => (keyWeightOf(k) > 0 ? keyWeightOf(k) : flexWidth));
+    const widthsSum = absoluteWidths.reduce((a, b) => a + b, 0);
+    const normalizedWidths = widthsSum > 0
+      ? absoluteWidths.map((w) => w / widthsSum)
+      : row.map(() => 1 / row.length);
+    const pooled = row.map((k) => !isPlaceholder(k));
 
+    const spaceIdx = row.findIndex((k) => k.type === "SpaceKey" || k.type === "MiniSpaceKey");
+    const bridgeIndex = spaceIdx >= 1 && spaceIdx <= row.length - 2 && flexCount <= 1 ? spaceIdx : -1;
     if (bridgeIndex >= 0) {
       const splitScale = Math.min(0.95, Math.max(0.40, 1 - gapFrac));
       const nonBridge = row.map((_, i) => i).filter((i) => i !== bridgeIndex);
@@ -3311,9 +3516,9 @@
         }
       }
       if (overflow > 0 && fixedIndices.length) {
-        const fixedSum = fixedIndices.reduce((a, i) => a + (assigned[i] || 0), 0);
-        if (fixedSum > 0) {
-          fixedIndices.forEach((i) => { assigned[i] -= overflow * ((assigned[i] || 0) / fixedSum); });
+        const fixedSumN = fixedIndices.reduce((a, i) => a + (assigned[i] || 0), 0);
+        if (fixedSumN > 0) {
+          fixedIndices.forEach((i) => { assigned[i] -= overflow * ((assigned[i] || 0) / fixedSumN); });
         }
       }
       let bridgeWidth = Math.max(1 - sumAssigned(), bridgeMinWidth);
@@ -3326,20 +3531,116 @@
         }
         bridgeWidth = 0.75;
       }
-      return { widths: row.map((_, i) => (i === bridgeIndex ? bridgeWidth : (assigned[i] || 0))), gapAfter: -1 };
+      return { widths: row.map((_, i) => (i === bridgeIndex ? bridgeWidth : (assigned[i] || 0))), gapAfter: -1, gapFracRendered: 0 };
     }
 
-    let prefix = 0;
-    let bestIdx = 0;
-    let bestDist = Infinity;
-    for (let i = 0; i < row.length - 1; i++) {
-      prefix += widths[i] || 0;
-      const d = Math.abs(prefix - 0.5);
-      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    // 断点：splitAfter 手动标记（最后一个，且不在行尾）优先；
+    // 自动断点用「只看承载键」的宽度向量（占位键计 0，不推偏断点）
+    const manualMarks = row
+      .map((k, i) => (k.splitAfter === true && i < row.length - 1 ? i : -1))
+      .filter((i) => i >= 0);
+    let splitIndex;
+    if (manualMarks.length) {
+      splitIndex = manualMarks[manualMarks.length - 1];
+    } else {
+      const carrierSum = absoluteWidths.reduce((a, w, i) => a + (pooled[i] ? Math.max(0, w) : 0), 0);
+      const breakpointWidths = carrierSum > 0
+        ? absoluteWidths.map((w, i) => (pooled[i] ? Math.max(0, w) / carrierSum : 0))
+        : absoluteWidths.slice();
+      let prefix = 0;
+      let bestDist = Infinity;
+      splitIndex = 0;
+      for (let i = 0; i < row.length - 1; i++) {
+        prefix += breakpointWidths[i] || 0;
+        const d = Math.abs(prefix - 0.5);
+        if (d < bestDist) { bestDist = d; splitIndex = i; }
+      }
+      const spaceIndices = row
+        .map((k, i) => (k.type === "SpaceKey" || k.type === "MiniSpaceKey") ? i : -1)
+        .filter((i) => i >= 1 && i <= row.length - 2);
+      if (spaceIndices.length) {
+        let running = 0;
+        const prefixByBoundary = [];
+        for (let i = 0; i < row.length - 1; i++) { running += (breakpointWidths[i] || 0); prefixByBoundary[i] = running; }
+        spaceIndices.forEach((spaceIndex) => {
+          [spaceIndex - 1, spaceIndex].forEach((index) => {
+            if (index < 0 || index >= row.length - 1) return;
+            const d = Math.abs((prefixByBoundary[index] || 0) - 0.5);
+            if (d <= bestDist + 0.06) { bestDist = d; splitIndex = index; }
+          });
+        });
+      }
     }
+
+    const leftIndices = row.map((_, i) => i).filter((i) => i <= splitIndex);
+    const rightIndices = row.map((_, i) => i).filter((i) => i > splitIndex);
     const sideCapacity = Math.max(0.05, (1 - gapFrac) / 2);
-    const scaled = widths.map((w) => w * sideCapacity);
-    return { widths: scaled, gapAfter: bestIdx };
+    const minFlexShare = Math.min(0.55, Math.max(0.30, 0.30 + (gapFrac - 0.20) * 0.80));
+    const allSideIndices = [...leftIndices, ...rightIndices];
+    const unalignedPoolSum = allSideIndices.reduce(
+      (sum, i) => sum + (pooled[i] ? Math.max(0, absoluteWidths[i]) : 0),
+      0
+    );
+    const unalignedPoolScale = unalignedPoolSum > 0
+      ? (1 - gapFrac) / unalignedPoolSum
+      : (1 - gapFrac);
+
+    const forSide = (indices) => {
+      if (!indices.length) return {};
+      if (!alignHalves) {
+        // 不对齐：承载键共用整行的 (1-gap) 池，保留原始宽度比例；占位键按绝对宽占位
+        const scale = unalignedPoolScale;
+        const out = {};
+        indices.forEach((i) => {
+          out[i] = pooled[i] ? absoluteWidths[i] * unalignedPoolScale : absoluteWidths[i] * scale;
+        });
+        return out;
+      }
+      const base = {};
+      indices.forEach((i) => { base[i] = normalizedWidths[i] || 0; });
+      const flexible = indices.filter((i) => keyWeightOf(row[i]) <= 0);
+      const fixed = indices.filter((i) => keyWeightOf(row[i]) > 0);
+      const fixedSumS = fixed.reduce((a, i) => a + base[i], 0);
+      const flexSumS = flexible.reduce((a, i) => a + base[i], 0);
+      const total = Math.max(0.0001, fixedSumS + flexSumS);
+      if (!flexible.length) {
+        const ratio = sideCapacity / total;
+        const out = {};
+        indices.forEach((i) => { out[i] = base[i] * ratio; });
+        return out;
+      }
+      const targetFlex = Math.min(
+        sideCapacity,
+        Math.max(sideCapacity * minFlexShare, Math.max(0, sideCapacity - fixedSumS))
+      );
+      const targetFixed = Math.max(0, sideCapacity - targetFlex);
+      const fixedScale = fixedSumS > 0 ? targetFixed / fixedSumS : 0;
+      const flexScale = flexSumS > 0 ? targetFlex / flexSumS : 0;
+      const out = {};
+      fixed.forEach((i) => { out[i] = base[i] * fixedScale; });
+      flexible.forEach((i) => { out[i] = base[i] * flexScale; });
+      return out;
+    };
+
+    const leftAdjusted = forSide(leftIndices);
+    const rightAdjusted = forSide(rightIndices);
+    if (!alignHalves) {
+      // fitSides：两侧之和超过 1 - 2% 时等比收窄，保底中缝
+      const leftTotal = leftIndices.reduce((a, i) => a + (leftAdjusted[i] || 0), 0);
+      const rightTotal = rightIndices.reduce((a, i) => a + (rightAdjusted[i] || 0), 0);
+      const sum = leftTotal + rightTotal;
+      const usable = 0.98;
+      if (sum > usable && sum > 0) {
+        const factor = usable / sum;
+        leftIndices.forEach((i) => { leftAdjusted[i] *= factor; });
+        rightIndices.forEach((i) => { rightAdjusted[i] *= factor; });
+      }
+    }
+    const leftTotal = leftIndices.reduce((a, i) => a + (leftAdjusted[i] || 0), 0);
+    const rightTotal = rightIndices.reduce((a, i) => a + (rightAdjusted[i] || 0), 0);
+    const renderedGap = Math.max(0, 1 - leftTotal - rightTotal);
+    const widths = row.map((_, i) => (i <= splitIndex ? (leftAdjusted[i] || 0) : (rightAdjusted[i] || 0)));
+    return { widths, gapAfter: splitIndex, gapFracRendered: renderedGap };
   }
 
   // 特殊键图标（借鉴 foxy-see-me 预览：退格/Shift/回车用 SVG 图标而非文字）
@@ -3355,36 +3656,54 @@
   }
 
   function renderLayoutPreview() {
-    const rows = getRows();
+    const previewSplit = !!state.previewSplit;
+    const rows = previewSplit && !state.editingSplit
+      ? (getVariantRows(state.selectedBase, state.selectedSubmode)
+        || getRowsDockedRows(state.selectedBase, state.selectedSubmode))
+      : getRows();
     const rowPercents = resolveRowHeightPercents(rows);
     const auxBarConfig = getAuxBarConfig();
     const auxBarKeys = getAuxBarKeys();
     const root = el("layout-preview");
+    root.classList.toggle("layout-preview-split", previewSplit);
+    root.style.width = "";
     const cfg = state.themeAppSync;
     const keyVGap = Math.max(0, Number(cfg.keyVGap) || 0);
     const punctPos = cfg.punctPos || 'bottom';
-    const previewMetrics = resolvePreviewMetrics();
-    const heightScale = resolvePreviewHeightScale(previewMetrics);
-    const previewContentHeight = resolvePreviewContentHeight(rows, heightScale);
-    const splitActive = !!cfg.splitEnabled && Number(cfg.splitGapPercent) >= 5;
+    const normalPreviewMetrics = resolvePreviewMetrics(false);
+    const previewMetrics = previewSplit ? resolvePreviewMetrics(true) : normalPreviewMetrics;
+    const keyboardRenderWidth = resolvePreviewKeyboardWidth(root, previewMetrics, previewSplit);
+    // Foxy 的分体预览只把容器扩展到双栏宽度，纵向仍沿用普通布局的 unit。
+    // Android 预览也按同一套布局行高渲染，避免切换模式时整块键盘突然变矮。
+    const heightMetrics = normalPreviewMetrics || previewMetrics;
+    const heightRenderWidth = resolvePreviewKeyboardWidth(root, heightMetrics, false);
+    const heightScale = resolvePreviewHeightScale(heightMetrics, false);
+    const previewContentHeight = resolvePreviewContentHeight(rows, heightScale, heightRenderWidth, heightMetrics);
+    const fallbackContentHeight = previewContentHeight ?? resolveFallbackContentHeight(heightRenderWidth, false);
     const splitGapFrac = Math.min(0.6, Math.max(0.05, Number(cfg.splitGapPercent) / 100 || 0.2));
+    // 分体预览跟随工具栏的「分体键盘」开关；布局编辑态仍决定是否读取 variant:split 行，
+    // 中缝宽度/对齐开关是独立的预览参数。
+    const splitRender = previewSplit && splitGapFrac >= 0.05;
+    const splitAlignHalves = state.themeAppSync.splitAlignHalves !== false;
     applyPreviewThemeSurface();
     root.style.setProperty('--preview-row-gap', '8px');
     root.style.setProperty('--preview-key-hgap', `${cfg.keyHGap || 0}px`);
     root.style.setProperty('--preview-key-vgap', `${keyVGap}px`);
     root.style.setProperty('--preview-key-radius', `${cfg.keyRadius || 0}px`);
-    root.style.setProperty('--preview-keyboard-max-width', `${previewMetrics?.maxWidth || 720}px`);
+    root.style.setProperty('--preview-keyboard-max-width', `${keyboardRenderWidth}px`);
     root.style.setProperty('--preview-side-padding', `${previewMetrics?.sidePadding || 0}px`);
     root.style.setProperty('--preview-bottom-padding', `${previewMetrics?.bottomPadding || 0}px`);
     root.style.setProperty('--preview-top-bar-height', `${previewMetrics?.topBarHeight || 0}px`);
     const rowsHtml = rows.map((row, rowIndex) => {
-      const rowHeight = previewContentHeight
-        ? Math.max(24, Math.round(previewContentHeight * (rowPercents[rowIndex] || 0) / 100))
-        : Math.max(24, Math.round(effectiveRowHeight(rowPercents[rowIndex] ?? 0) * heightScale));
+      const rowHeight = Math.max(
+        24,
+        Math.round((previewContentHeight ?? fallbackContentHeight) * (rowPercents[rowIndex] || 0) / 100)
+      );
       const keyHeight = effectivePreviewKeyHeight(rowHeight, keyVGap);
-      const splitLayout = splitActive ? resolveSplitRowLayout(row, splitGapFrac) : null;
-      const widths = splitLayout ? splitLayout.widths : resolveRegularRowWidths(row);
-      return `<div class="layout-row" style="--row-height:${rowHeight}px;--key-height:${keyHeight}px"><div class="keys">${row.map((key, keyIndex) => {
+      const workRow = splitRender ? duplicateMiddleKeyForPreview(row) : row;
+      const splitLayout = splitRender ? resolveSplitRowLayout(workRow, splitGapFrac, splitAlignHalves) : null;
+      const widths = splitLayout ? splitLayout.widths : resolveRegularRowWidths(workRow);
+      return `<div class="layout-row" style="--row-height:${rowHeight}px;--key-height:${keyHeight}px"><div class="keys">${workRow.map((key, keyIndex) => {
         const w = widths[keyIndex] || 0;
         const widthPercent = `${(w * 100).toFixed(6)}%`;
         const previewColors = resolvePreviewColorsForKey(key);
@@ -3413,10 +3732,18 @@
         let badges = "";
         if (key.longPress) badges += `<span class="key-badge key-badge-lp" title="长按事件"></span>`;
         if (key.tap) badges += `<span class="key-badge key-badge-macro" title="含宏动作"></span>`;
-        const previewEditTitle = `${key.type || "?"}。点击按键可直接编辑`;
-        const slotHtml = `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}" data-preview-row="${rowIndex}" data-preview-key="${keyIndex}" tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(key)}</span>${alt}${hint}${badges}</div></div>`;
+        const originalIndex = typeof key.__dupOf === "number" ? key.__dupOf : keyIndex;
+        const previewEditTitle = `${keyTypeLabel(key.type)}。点击按键可直接编辑`;
+        // PlaceholderKey 始终只承担布局占位，不在预览中绘制成独立按键；
+        // transparent 仅影响编辑器/导出语义，不能改变预览的空白占位外观。
+        const isGhostPlaceholder = key.type === "PlaceholderKey";
+        const dupAttr = typeof key.__dupOf === "number" ? ` data-preview-dup="1"` : "";
+        const slotHtml = isGhostPlaceholder
+          ? `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key placeholder-key-ghost" style="--key-width:${widthPercent}" data-preview-row="${rowIndex}" data-preview-key="${originalIndex}"${dupAttr} tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"></div></div>`
+          : `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}" data-preview-row="${rowIndex}" data-preview-key="${originalIndex}"${dupAttr} tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(key)}</span>${alt}${hint}${badges}</div></div>`;
         if (splitLayout && splitLayout.gapAfter === keyIndex) {
-          return `${slotHtml}<div class="layout-key-slot layout-split-gap" style="--key-width:${(splitGapFrac * 100).toFixed(4)}%"></div>`;
+          const renderedGapPct = Math.max(0, (splitLayout.gapFracRendered ?? splitGapFrac) * 100).toFixed(4);
+          return `${slotHtml}<div class="layout-key-slot layout-split-gap" style="--key-width:${renderedGapPct}%"></div>`;
         }
         return slotHtml;
       }).join("")}</div></div>`;
@@ -3429,7 +3756,9 @@
     });
     const height = getHeightOverride();
     const auxMeta = auxBarConfig ? `，辅助选择栏 ${auxBarConfig.position}${auxBarConfig.position !== "above_preedit" ? ` ${Math.round(auxBarConfig.sizePercent)}%` : ""}` : "";
-    const splitMeta = splitActive ? `，分体（中缝 ${Math.round(splitGapFrac * 100)}%）` : "";
+    const splitMeta = splitRender
+      ? `，分体布局（横向扩展，中缝 ${Math.round(splitGapFrac * 100)}%${splitAlignHalves ? "" : "，不强制对齐"}）`
+      : "";
     setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${height ? `，键盘高度 ${height}%` : ""}${splitMeta}${auxMeta}`, "");
     renderThemeSupplementPreview();
     updateFixedChromeMetrics();
@@ -3442,7 +3771,7 @@
       const colors = resolvePreviewColorsForKey(key);
       return `--preview-key-bg:${colors.backgroundCss};color:${colors.textCss};border-color:${colors.borderCss};--preview-key-shadow:${colors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
     };
-    const chipOf = (key, auxIndex) => `<div class="layout-key-slot" style="--key-width:0%"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyleOf(key))}" data-preview-aux-key="${auxIndex}" tabindex="0" role="button" title="${escapeAttr(`${key.type || "?"}。点击按键可直接编辑`)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(key)}</span></div></div>`;
+    const chipOf = (key, auxIndex) => `<div class="layout-key-slot" style="--key-width:0%"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyleOf(key))}" data-preview-aux-key="${auxIndex}" tabindex="0" role="button" title="${escapeAttr(`${keyTypeLabel(key.type)}。点击按键可直接编辑`)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(key)}</span></div></div>`;
     const auxKeysHtml = auxBarKeys.length
       ? `<div class="keys aux-bar-keys">${auxBarKeys.map(chipOf).join("")}</div>`
       : `<div class="aux-bar-placeholder">辅助选择栏（无按键，运行时显示候选标签页）</div>`;
@@ -3522,15 +3851,19 @@
   function pinPreviewContainerWidth() {
     const root = el("layout-preview");
     if (!root) return;
-    // On narrow viewports, CSS mobile rules set width:100% — don't override
-    if (window.innerWidth <= 1080) return;
+    // On narrow viewports, CSS mobile rules set width:100% — clear any desktop pin first.
+    if (window.innerWidth <= 1080) {
+      root.style.width = "";
+      return;
+    }
     // Measure max row width after layout settles, set container to match
     const keysRows = root.querySelectorAll(".layout-row .keys");
     let maxW = 0;
     keysRows.forEach((row) => { maxW = Math.max(maxW, row.offsetWidth); });
     if (maxW > 0) {
-      // 20 = 10px padding * 2 (box-sizing:border-box, no border)
-      root.style.width = (maxW + 22) + "px";
+      const centerWidth = root.closest(".preview-center")?.clientWidth || Infinity;
+      // 20 = 10px padding * 2 (box-sizing:border-box, no border).
+      root.style.width = `${Math.min(maxW + 20, centerWidth)}px`;
     }
   }
 
@@ -3702,23 +4035,33 @@
       densityDpi: Number(raw.densityDpi) || 0,
       orientation: String(raw.orientation || ""),
       keyboardHeightPercent: Number(raw.keyboardHeightPercent) || 0,
+      keyboardHeightPercentLandscape: Number(raw.keyboardHeightPercentLandscape) || 0,
       keyboardSidePaddingPx: Number(raw.keyboardSidePaddingPx) || 0,
       keyboardBottomPaddingPx: Number(raw.keyboardBottomPaddingPx) || 0,
       kawaiiBarHeightPx: Number(raw.kawaiiBarHeightPx) || 0
     };
   }
 
-  function resolvePreviewMetrics() {
+  function resolvePreviewMetrics(landscape = false) {
     const metrics = state.themeAppSync?.previewMetrics;
     if (!metrics || !Number.isFinite(Number(metrics.screenWidthPx)) || !Number.isFinite(Number(metrics.keyboardHeightPx))) {
       return null;
     }
-    const screenWidthPx = Math.max(1, Number(metrics.screenWidthPx));
-    const keyboardHeightPx = Math.max(1, Number(metrics.keyboardHeightPx));
+    const rawWidth = Math.max(1, Number(metrics.screenWidthPx));
+    const rawHeight = Math.max(1, Number(metrics.screenHeightPx));
+    const screenWidthPx = landscape ? Math.max(rawWidth, rawHeight) : rawWidth;
+    const screenHeightPx = landscape ? Math.min(rawWidth, rawHeight) : rawHeight;
     const density = Math.max(0.1, Number(metrics.density) || 1);
-    const maxWidth = Math.min(720, Math.max(320, screenWidthPx / density));
-    // Target height preserves phone's keyboard view aspect ratio (keys area, excluding kawaii bar and bottom padding)
-    const targetHeight = Math.max(120, maxWidth * keyboardHeightPx / screenWidthPx);
+    const keyboardHeightPercent = landscape
+      ? (Number(metrics.keyboardHeightPercentLandscape) > 0 ? Number(metrics.keyboardHeightPercentLandscape) : 49)
+      : Number(metrics.keyboardHeightPercent) || 0;
+    const keyboardHeightPx = landscape
+      ? Math.max(1, screenHeightPx * keyboardHeightPercent / 100)
+      : Math.max(1, Number(metrics.keyboardHeightPx));
+    const widthCap = landscape ? LIVE_PREVIEW_SPLIT_MAX_WIDTH : LIVE_PREVIEW_KEYBOARD_MAX_WIDTH;
+    const maxWidth = Math.min(widthCap, Math.max(320, screenWidthPx / density));
+    // Keep the keyboard window ratio from Android; split preview uses landscape dimensions.
+    const targetHeight = Math.max(1, maxWidth * keyboardHeightPx / screenWidthPx);
     const sideDp = Math.max(0, Number(metrics.keyboardSidePaddingPx || 0) / density);
     const bottomDp = Math.max(0, Number(metrics.keyboardBottomPaddingPx || 0) / density);
     // Kawaii bar sits above the keyboard view in the IME; scale to preview dp space.
@@ -3726,26 +4069,48 @@
     return {
       maxWidth,
       targetHeight,
+      keyboardHeightPercent,
       sidePadding: Math.min(maxWidth / 3, sideDp),
       bottomPadding: Math.min(targetHeight / 3, bottomDp),
       topBarHeight: topBarDp
     };
   }
 
-  function resolvePreviewContentHeight(rows, heightScale = 1) {
-    const metrics = resolvePreviewMetrics();
-    if (!metrics) return null;
-    const rowCount = Math.max(1, rows.length);
-    // targetHeight represents keyboard view height (keys area), which does NOT include
-    // bottom padding. bottomPadding is a separate space below the keys in the Android layout.
-    // No rowGap subtraction needed (CSS margin-bottom on rows was removed).
-    const scale = Number.isFinite(heightScale) && heightScale > 0 ? heightScale : 1;
-    return Math.max(rowCount * 28, metrics.targetHeight * scale);
+  function resolvePreviewAvailableWidth(root, landscape = false) {
+    const center = root?.closest?.(".preview-center");
+    const containerWidth = Number(center?.clientWidth || root?.clientWidth || 0);
+    if (!Number.isFinite(containerWidth) || containerWidth <= 0) {
+      return landscape ? LIVE_PREVIEW_SPLIT_MAX_WIDTH : LIVE_PREVIEW_KEYBOARD_MAX_WIDTH;
+    }
+    const style = root ? getComputedStyle(root) : null;
+    const horizontalPadding = (Number.parseFloat(style?.paddingLeft || "0") || 0)
+      + (Number.parseFloat(style?.paddingRight || "0") || 0);
+    return Math.max(1, containerWidth - horizontalPadding);
   }
 
-  function effectiveRowHeight(percent) {
-    const h = Number(percent) || 0;
-    return h > 0 ? Math.max(34, Math.round(48 * h / 25)) : 42;
+  function resolvePreviewKeyboardWidth(root, previewMetrics, landscape = false) {
+    const intrinsicWidth = previewMetrics?.maxWidth
+      || (landscape ? LIVE_PREVIEW_SPLIT_MAX_WIDTH : LIVE_PREVIEW_KEYBOARD_MAX_WIDTH);
+    return Math.max(1, Math.min(intrinsicWidth, resolvePreviewAvailableWidth(root, landscape)));
+  }
+
+  function resolvePreviewContentHeight(rows, heightScale = 1, renderWidth = null, previewMetrics = null) {
+    const metrics = previewMetrics || resolvePreviewMetrics();
+    if (!metrics) return null;
+    const rowCount = Math.max(1, rows.length);
+    // targetHeight follows the actual rendered width so desktop and mobile keep one aspect ratio.
+    const width = Number(renderWidth) > 0 ? Number(renderWidth) : metrics.maxWidth;
+    const targetHeight = width * metrics.targetHeight / metrics.maxWidth;
+    const scale = Number.isFinite(heightScale) && heightScale > 0 ? heightScale : 1;
+    return Math.max(rowCount * 28, targetHeight * scale);
+  }
+
+  // 无 IME 量测时按 Android 的名义设备比例生成预览高度。
+  function resolveFallbackContentHeight(keyboardWidthPx, landscape = false) {
+    const override = Number(landscape ? getHeightOverrideLandscape() : getHeightOverride());
+    const pct = Number.isFinite(override) && override >= 10 ? override : (landscape ? 49 : 30);
+    const nominalAspect = landscape ? 9 / 20 : 20 / 9;
+    return keyboardWidthPx * nominalAspect * pct / 100;
   }
 
   function effectivePreviewKeyHeight(rowHeight, keyVGap) {
@@ -3886,7 +4251,7 @@
         keyBtn.innerHTML = `
           <span class="chip-main">${escapeHtml(editorKeyLabel(key))}</span>
         `;
-        keyBtn.title = `${key.type || "?"}。点击编辑，拖拽排序，右键删除`;
+        keyBtn.title = `${keyTypeLabel(key.type)}。点击编辑，拖拽排序，右键删除`;
         const openLayoutKeyEditor = () => {
           openLayoutKeyDialog(rowIndex, keyIndex, false);
         };
@@ -4569,7 +4934,7 @@
       chip.className = `layout-chip aux-bar-chip ${keyVariantClass(key)}`;
       chip.style.cssText = keyVariantStyle(key);
       chip.innerHTML = `<span class="chip-main">${escapeHtml(editorKeyLabel(key))}</span>`;
-      chip.title = `${key.type || "?"}。点击编辑，右键删除`;
+      chip.title = `${keyTypeLabel(key.type)}。点击编辑，右键删除`;
       chip.addEventListener("click", () => {
         state.layoutKeyDialogTouchOpenUntil = Date.now() + 1000;
         openKeyEditorDialog(-1, -1, false, index);
@@ -4631,7 +4996,10 @@
     const swipeTypes = new Set(["LayoutSwitchKey", "SymbolKey", "CapsKey", "ReturnKey", "BackspaceKey"]);
     const labelTypes = new Set(["LayoutSwitchKey", "SymbolKey", "MacroKey"]);
     return {
-      hasMainAlt: type === "AlphabetKey",
+      // PlaceholderKey：主=显示文本（可空，原样显示），副=副文本；无任何行为/弹出
+      hasMainAlt: type === "AlphabetKey" || type === "PlaceholderKey",
+      hasStaticMainAlt: type === "PlaceholderKey",
+      hasTransparentBg: type === "PlaceholderKey",
       hasLabel: labelTypes.has(type),
       hasSubLabel: type === "LayoutSwitchKey",
       hasEditableSubLabel: false,
@@ -4651,7 +5019,7 @@
     const key = keyDialogState.draft || {};
     const type = key.type || "AlphabetKey";
     const typeSelect = el("layout-key-type");
-    typeSelect.innerHTML = keyTypes.map((t) => `<option value="${escapeAttr(t)}">${escapeHtml(t)}</option>`).join("");
+    typeSelect.innerHTML = keyTypes.map((t) => `<option value="${escapeAttr(t)}">${escapeHtml(keyTypeLabel(t))}</option>`).join("");
     typeSelect.value = keyTypes.includes(type) ? type : "AlphabetKey";
     el("layout-key-main").value = key.main || "";
     el("layout-key-alt").value = key.alt || "";
@@ -4679,6 +5047,10 @@
       .join("");
     targetSel.value = switchTargetsForDialog.some((o) => o.value === currentSubLabel)
       ? currentSubLabel : "";
+    const splitAfterBox = el("layout-key-split-after");
+    if (splitAfterBox) splitAfterBox.checked = key.splitAfter === true;
+    const transparentBox = el("layout-key-transparent");
+    if (transparentBox) transparentBox.checked = type === "PlaceholderKey" && key.transparent !== false;
     updateKeyDialogFieldVisibility(type);
     syncComposeInlineUi();
     refreshKeyDialogSummaries();
@@ -4710,6 +5082,10 @@
     if (subLabelInput) subLabelInput.disabled = !c.hasEditableSubLabel;
     if (weightInput) weightInput.disabled = inComposeEdit || inAuxBarEdit;
     if (rowHeightInput) rowHeightInput.disabled = inComposeEdit || inAuxBarEdit;
+    const splitAfterRow = el("layout-key-split-after-row");
+    if (splitAfterRow) splitAfterRow.hidden = type === "PlaceholderKey";
+    const transparentRow = el("layout-key-transparent-row");
+    if (transparentRow) transparentRow.hidden = type !== "PlaceholderKey";
     const displayBtn = el("layout-key-open-display-text");
     const labelsBtn = el("layout-key-open-labels");
     const macroBtn = el("layout-key-open-macro");
@@ -4865,6 +5241,16 @@
       if (value) key.subLabel = value;
       else delete key.subLabel;
     }
+    // 分体断点标记：仅勾选时保留（normalize 阶段会剔除 false/缺失）
+    const splitAfterBox = el("layout-key-split-after");
+    if (splitAfterBox && splitAfterBox.checked) key.splitAfter = true;
+    else delete key.splitAfter;
+    // 占位键透明底：勾选（默认）= 不写字段（app 缺省即透明）；取消勾选 = "transparent": false
+    const transparentBox = el("layout-key-transparent");
+    if (transparentBox && type === "PlaceholderKey") {
+      if (transparentBox.checked) delete key.transparent;
+      else key.transparent = false;
+    }
     if (inComposeEdit) {
       delete key.weight;
       delete key.rowHeightPercent;
@@ -4892,6 +5278,12 @@
       if (!alt) throw new Error("副字符不能为空");
       if (Array.from(main).length !== 1) throw new Error("主字符必须是单个字符");
       if (Array.from(alt).length !== 1) throw new Error("副字符必须是单个字符");
+    }
+    if (type === "PlaceholderKey") {
+      // 主副字符都可留空（默认形态就是完全看不见的空白）；写了就按原样显示
+      if (!String(key.main || "").trim() && !String(key.alt || "").trim() && key.transparent !== false) {
+        // 全空且透明 = 纯占位，允许；不做额外校验
+      }
     }
     if (type === "MacroKey") {
       const label = String(key.label || "").trim();
@@ -6329,6 +6721,17 @@
   }
 
   function deleteLayout() {
+    // 分体编辑态：删除的是当前条目的分体布局（variant），回到普通布局
+    if (state.editingSplit) {
+      if (!confirm(`删除 ${entryKey(state.selectedBase, state.selectedSubmode)} 的分体布局？`)) return;
+      deleteVariantRows(state.selectedBase, state.selectedSubmode);
+      state.editingSplit = false;
+      const box = el("layout-split-mode");
+      if (box) box.checked = false;
+      syncLayoutUiFromState();
+      setStatus("layout-json-status", "已删除分体布局，回到普通排列", "ok");
+      return;
+    }
     const bases = baseNames();
     if (bases.length <= 1) return alert("至少保留一个布局");
 
@@ -6339,6 +6742,7 @@
     // If current selected submode has a dedicated layout, delete that submode only.
     if (sub !== DEFAULT_SUBMODE && subs.includes(sub)) {
       if (!confirm(`删除子模式 ${sub}？`)) return;
+      deleteVariantRows(base, sub);
       const v = state.layout[base];
       if (v && typeof v === "object" && !isRows(v)) delete v[sub];
       state.selectedSubmode = submodeNames(base)[0] || DEFAULT_SUBMODE;
@@ -6393,6 +6797,7 @@
     const subs = submodeNames(state.selectedBase);
     if (subs.length <= 1) return alert("当前布局只有一个子模式");
     if (!confirm(`删除子模式 ${state.selectedSubmode}？`)) return;
+    deleteVariantRows(state.selectedBase, state.selectedSubmode);
     const v = state.layout[state.selectedBase];
     if (v && typeof v === "object" && !isRows(v)) delete v[state.selectedSubmode];
     state.selectedSubmode = submodeNames(state.selectedBase)[0] || DEFAULT_SUBMODE;
@@ -6895,6 +7300,40 @@
       } catch (err) {
         alert(err.message);
         renderSelectors();
+      }
+    });
+    el("layout-split-mode")?.addEventListener("change", (e) => {
+      const on = !!e.target.checked;
+      try {
+        // 分体变体是可逆的编辑模式：首次启用时直接复制普通排列，避免
+        // confirm() 在嵌入页面或自动化环境中被拦截后把状态回退为 false。
+        const needsCopy = on && !hasVariantRows(state.selectedBase, state.selectedSubmode);
+        if (needsCopy) {
+          setVariantRows(
+            state.selectedBase,
+            state.selectedSubmode,
+            deepClone(getRowsDockedRows(state.selectedBase, state.selectedSubmode))
+          );
+        }
+        state.editingSplit = on;
+        state.previewSplit = on;
+         syncPreviewToolbarUi();
+        ensureSelection();
+        syncLayoutUiFromState();
+        setStatus(
+          "layout-json-status",
+          on
+            ? (needsCopy ? "已从普通排列创建分体布局并进入编辑" : "已进入分体布局编辑")
+            : "已回到普通排列",
+          "ok"
+        );
+      } catch (err) {
+        // 复制或规范化失败时保持 UI 与内部状态一致，不留下半成品变体。
+        state.editingSplit = false;
+        state.previewSplit = false;
+        e.target.checked = false;
+        syncSplitModeCheckbox();
+        setStatus("layout-json-status", `进入分体布局失败：${err.message}`, "err");
       }
     });
     const landscapeOverrideInput = el("layout-height-override-landscape");
@@ -8349,6 +8788,7 @@
     ].forEach(id => {
       el(id).addEventListener('change', () => {
         syncThemeAppSyncStateFromUi();
+         syncPreviewToolbarUi();
         renderLayoutPreview();
         syncSurfaceColorIndicator();
       });
@@ -8480,11 +8920,9 @@
       state.themeAppSync.keyVGap = typeof payload.keyVGap === "number" ? payload.keyVGap : 3;
       state.themeAppSync.keyRadius = typeof payload.keyRadius === "number" ? payload.keyRadius : 4;
       state.themeAppSync.punctPos = typeof payload.punctPos === "string" ? payload.punctPos : "bottom";
-      // 分体键盘配置（app 端桥接 2026-10 起提供；旧桥接缺字段时保留本地值）
-      state.themeAppSync.splitEnabled = typeof payload.splitEnabled === "boolean" ? payload.splitEnabled : state.themeAppSync.splitEnabled;
-      state.themeAppSync.splitGapPercent = typeof payload.splitGapPercent === "number" ? payload.splitGapPercent : state.themeAppSync.splitGapPercent;
-      state.themeAppSync.splitThreshold = typeof payload.splitThreshold === "number" ? payload.splitThreshold : state.themeAppSync.splitThreshold;
-      state.themeAppSync.splitUseLandscape = typeof payload.splitUseLandscape === "boolean" ? payload.splitUseLandscape : state.themeAppSync.splitUseLandscape;
+      // 分体中缝宽度（app 端桥接若提供 splitGapPercent / splitAlignHalves 则同步；缺省保留本地值）
+      if (typeof payload.splitGapPercent === "number") state.themeAppSync.splitGapPercent = payload.splitGapPercent;
+      if (typeof payload.splitAlignHalves === "boolean") state.themeAppSync.splitAlignHalves = payload.splitAlignHalves;
       state.themeAppSync.previewMetrics = normalizePreviewMetrics(payload);
       syncThemeAppSyncUiFromState();
       syncPreviewToolbarUi();
@@ -8504,10 +8942,8 @@
         keyVGap: Number(state.themeAppSync.keyVGap) || 0,
         keyRadius: Number(state.themeAppSync.keyRadius) || 0,
         punctPos: state.themeAppSync.punctPos || "bottom",
-        splitEnabled: !!state.themeAppSync.splitEnabled,
         splitGapPercent: Math.round(Number(state.themeAppSync.splitGapPercent) || 20),
-        splitThreshold: Math.round(Number(state.themeAppSync.splitThreshold) || 470),
-        splitUseLandscape: !!state.themeAppSync.splitUseLandscape
+        splitAlignHalves: state.themeAppSync.splitAlignHalves !== false
       })
     });
   }
@@ -9885,7 +10321,9 @@
         })),
         selectedIconThemeId: state.selectedIconThemeId,
         selectedBase: state.selectedBase,
-        selectedSubmode: state.selectedSubmode
+        selectedSubmode: state.selectedSubmode,
+        editingSplit: !!state.editingSplit,
+        previewSplit: !!state.previewSplit
       });
     } catch (_) {
       return "";
@@ -9929,6 +10367,8 @@
           ? snap.selectedSubmode
           : submodeNames(state.selectedBase)[0] || DEFAULT_SUBMODE;
       }
+      state.editingSplit = snap.editingSplit === true && hasVariantRows(state.selectedBase, state.selectedSubmode);
+      state.previewSplit = typeof snap.previewSplit === "boolean" ? snap.previewSplit : state.editingSplit;
       if (snap.popup && typeof snap.popup === "object") state.popupEntries = snap.popup;
       if (Array.isArray(snap.themes)) {
         state.themeCatalog = snap.themes.map((t) => ({
@@ -10075,8 +10515,10 @@
     try {
       const raw = JSON.parse(localStorage.getItem(PREVIEW_SPLIT_KEY) || "null");
       if (raw && typeof raw === "object") {
-        if (typeof raw.enabled === "boolean") state.themeAppSync.splitEnabled = raw.enabled;
         if (Number.isFinite(Number(raw.gapPercent))) state.themeAppSync.splitGapPercent = Number(raw.gapPercent);
+        if (typeof raw.alignHalves === "boolean") state.themeAppSync.splitAlignHalves = raw.alignHalves;
+        if (typeof raw.previewSplit === "boolean") state.previewSplit = raw.previewSplit;
+        if (typeof raw.gboardStyle === "boolean") state.themeAppSync.gboardStyle = raw.gboardStyle;
       }
     } catch (_) {}
   }
@@ -10084,8 +10526,10 @@
   function saveLocalSplitPrefs() {
     try {
       localStorage.setItem(PREVIEW_SPLIT_KEY, JSON.stringify({
-        enabled: !!state.themeAppSync.splitEnabled,
-        gapPercent: Math.round(Number(state.themeAppSync.splitGapPercent) || 20)
+        gapPercent: Math.round(Number(state.themeAppSync.splitGapPercent) || 20),
+        alignHalves: state.themeAppSync.splitAlignHalves !== false,
+        previewSplit: !!state.previewSplit,
+        gboardStyle: !!state.themeAppSync.gboardStyle
       }));
     } catch (_) {}
   }
@@ -10112,15 +10556,23 @@
       try { showHints = localStorage.getItem(PREVIEW_HINTS_KEY) !== "0"; } catch (_) {}
       hints.checked = showHints;
     }
-    const split = el("pt-split");
-    if (split) split.checked = !!state.themeAppSync.splitEnabled;
+    const gboard = el("pt-gboard-style");
+    if (gboard) gboard.checked = !!state.themeAppSync.gboardStyle;
+    const previewSplit = el("pt-split");
+    if (previewSplit) previewSplit.checked = !!state.previewSplit;
     const splitGap = el("pt-split-gap");
+    const splitControlsEnabled = !!state.previewSplit;
     if (splitGap) {
       splitGap.value = Math.round(Number(state.themeAppSync.splitGapPercent) || 20);
-      splitGap.disabled = !state.themeAppSync.splitEnabled;
+      splitGap.disabled = !splitControlsEnabled;
     }
-    const splitGapCell = el("pt-split-gap-cell");
-    if (splitGapCell) splitGapCell.style.opacity = state.themeAppSync.splitEnabled ? "" : "0.45";
+    const alignBox = el("pt-align-halves");
+    if (alignBox) {
+      alignBox.checked = state.themeAppSync.splitAlignHalves !== false;
+      alignBox.disabled = !splitControlsEnabled;
+    }
+    const gapCell = el("pt-split-gap-cell");
+    if (gapCell) gapCell.style.opacity = splitControlsEnabled ? "" : "0.45";
   }
 
   function setupPreviewToolbar() {
@@ -10158,20 +10610,33 @@
       renderLayoutPreview();
     });
     el("pt-split")?.addEventListener("change", (e) => {
-      state.themeAppSync.splitEnabled = !!e.target.checked;
+      state.previewSplit = !!e.target.checked;
       saveLocalSplitPrefs();
       syncPreviewToolbarUi();
+      renderLayoutPreview();
+    });
+    el("pt-gboard-style")?.addEventListener("change", (e) => {
+      state.themeAppSync.gboardStyle = !!e.target.checked;
+      saveLocalSplitPrefs();
+      syncThemeAppSyncUiFromState();
+      syncPreviewToolbarUi();
+      renderLayoutPreview();
+    });
+    el("pt-align-halves")?.addEventListener("change", (e) => {
+      state.themeAppSync.splitAlignHalves = !!e.target.checked;
+      saveLocalSplitPrefs();
       renderLayoutPreview();
     });
     el("pt-split-gap")?.addEventListener("change", (e) => {
       const n = Math.round(Number(e.target.value) || 20);
       state.themeAppSync.splitGapPercent = Math.min(60, Math.max(5, n));
       saveLocalSplitPrefs();
-      syncPreviewToolbarUi();
       renderLayoutPreview();
     });
     loadLocalSplitPrefs();
+    syncThemeAppSyncUiFromState();
     syncPreviewToolbarUi();
+    renderLayoutPreview();
   }
 
   // ── 预览按键按压反馈 ──
@@ -10258,8 +10723,10 @@
     if (!report) { panel.className = "json-issues"; panel.innerHTML = ""; return; }
     panel.className = "json-issues show";
     if (report.parseOk && !report.total) {
-      panel.classList.add("ok");
-      panel.innerHTML = `<div class="json-issue-line"><span class="json-issue-main">✔ JSON 语法正常${notice ? ` · ${escapeHtml(notice)}` : ""}</span></div>`;
+      // 语法正常时不展开面板：避免常驻横条挤占/遮挡编辑区，点击落空
+      panel.className = "json-issues";
+      panel.innerHTML = "";
+      if (notice) setStatus(`${prefix}-json-status`, notice, "ok");
       return;
     }
     const errorMode = !report.parseOk;
@@ -10469,7 +10936,8 @@
     window.addEventListener("resize", syncIconThemeJsonHeight);
     window.addEventListener("resize", updateFixedChromeMetrics);
     window.addEventListener("resize", () => requestAnimationFrame(() => {
-      syncThemeCardBlurMaskGeometry();
+      renderLayoutPreview();
+       syncThemeCardBlurMaskGeometry();
       syncPreviewBlurMaskGeometry();
       fitLayoutPreviewText();
     }));

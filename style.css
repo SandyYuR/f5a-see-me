@@ -996,12 +996,18 @@ input[type="checkbox"] {
   padding-top: calc(10px + var(--preview-top-bar-height, 0px));
   padding-bottom: calc(10px + var(--preview-bottom-padding, 0px));
   background-color: var(--panel-inner);
-  max-width: 760px;
+  max-width: 598px;
   margin: 0 auto;
   --preview-row-gap: 8px;
   --preview-key-hgap: 3px;
   --preview-key-vgap: 7px;
-  --preview-key-radius: 4px;
+  --preview-key-radius: 6px;
+  --preview-keyboard-max-width: 576px;
+}
+
+.layout-preview.layout-preview-split {
+  max-width: 1248px;
+  --preview-keyboard-max-width: 1228px;
 }
 
 .preview-shell {
@@ -1010,10 +1016,7 @@ input[type="checkbox"] {
   gap: 10px;
   align-items: start;
   padding-top: 4px;
-  /* 内容整体限宽居中（借鉴 foxy 的 --content-max）：
-     键盘最大 720dp，宽屏下避免两侧色块被拉到视口两端留下大片空白 */
-  max-width: 1120px;
-  margin: 0 auto;
+  /* 两侧主题色块列贴住窗口左右边缘（用户要求），键盘列内部限宽居中 */
 }
 
 .preview-center {
@@ -1029,7 +1032,7 @@ input[type="checkbox"] {
   display: flex;
   gap: 0;
   min-height: var(--row-height, 42px);
-  width: min(100%, var(--preview-keyboard-max-width, 720px));
+  width: min(100%, var(--preview-keyboard-max-width, 576px));
   justify-content: center;
   padding: 0 var(--preview-side-padding, 0px);
 }
@@ -1045,7 +1048,7 @@ input[type="checkbox"] {
   height: var(--key-height, calc(var(--row-height, 42px) - var(--preview-key-vgap, 0px) * 2));
   width: 100%;
   color: var(--text);
-  border-radius: var(--preview-key-radius, 4px);
+  border-radius: var(--preview-key-radius, 6px);
   border: 1px solid var(--border);
   background: var(--preview-key-bg, #242a38);
   display: flex;
@@ -1059,6 +1062,14 @@ input[type="checkbox"] {
   cursor: default;
   container-type: inline-size;
   margin: max(var(--preview-key-vgap, 0px), 2px) 0;
+}
+
+.layout-key.placeholder-key-ghost {
+  visibility: hidden;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  pointer-events: none;
 }
 
 .layout-key.no-border {
@@ -1275,7 +1286,7 @@ input[type="checkbox"] {
   justify-content: center;
   min-height: 34px;
   border: 1px dashed var(--border, rgba(255, 255, 255, .25));
-  border-radius: var(--preview-key-radius, 4px);
+  border-radius: var(--preview-key-radius, 6px);
   color: var(--sub);
   font-size: 12px;
   padding: 4px 8px;
@@ -1895,11 +1906,15 @@ input[type="checkbox"] {
   }
 
   .layout-preview {
-    width: 100%;
+    width: 100% !important;
     max-width: 100%;
     margin: 0;
     padding-left: 8px;
     padding-right: 8px;
+  }
+
+  .layout-preview.layout-preview-split {
+    max-width: 100%;
   }
 
   .popup-entry-row {
@@ -2533,3 +2548,14 @@ html.site-mode-light .cm-separator { color: #383a42; }
 html.site-mode-light .cm-meta { color: #4078f2; }
 html.site-mode-light .cm-bracket { color: #383a42; }
 html.site-mode-light ::selection { background: rgba(47, 107, 255, 0.22); }
+
+/* 暗色下显式光标色（oneDark 用自绘光标，原生 caret 透明；双保险保证可见） */
+html.site-mode-dark .cm-content {
+  caret-color: #dfe5f2;
+}
+
+/* 只读 JSON 文本域的视觉提示 */
+textarea[readonly] {
+  opacity: 0.72;
+  cursor: not-allowed;
+}
