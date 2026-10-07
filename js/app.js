@@ -3472,7 +3472,7 @@
   function resolveSplitRowLayout(row, gapFrac, alignHalves) {
     if (!row || row.length < 2) return null;
     const keyWeightOf = (key) => {
-      const n = Number(key?.weight);
+      const n = Number(keyWeight(key));
       return Number.isFinite(n) && n > 0 ? n : 0;
     };
     const isPlaceholder = (key) => key?.type === "PlaceholderKey";
