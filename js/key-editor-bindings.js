@@ -94,10 +94,22 @@
     });
     el("layout-key-macro-cancel").addEventListener("click", () => el("layout-key-macro-dialog").close());
     el("layout-key-macro-edit-tap").addEventListener("click", () => openMacroEventEditor("tap"));
+    el("layout-key-macro-edit-swipe-up").addEventListener("click", () => openMacroEventEditor("swipeUp"));
+    el("layout-key-macro-edit-swipe-down").addEventListener("click", () => openMacroEventEditor("swipeDown"));
     el("layout-key-macro-edit-swipe").addEventListener("click", () => openMacroEventEditor("swipe"));
     el("layout-key-macro-edit-long-press").addEventListener("click", () => openMacroEventEditor("longPress"));
     el("layout-key-macro-clear-tap").addEventListener("click", () => {
       if (keyDialogState.draft) delete keyDialogState.draft.tap;
+      openMacroDialog();
+      refreshKeyDialogSummaries();
+    });
+    el("layout-key-macro-clear-swipe-up").addEventListener("click", () => {
+      if (keyDialogState.draft) delete keyDialogState.draft.swipeUp;
+      openMacroDialog();
+      refreshKeyDialogSummaries();
+    });
+    el("layout-key-macro-clear-swipe-down").addEventListener("click", () => {
+      if (keyDialogState.draft) delete keyDialogState.draft.swipeDown;
       openMacroDialog();
       refreshKeyDialogSummaries();
     });

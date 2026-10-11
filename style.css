@@ -2462,6 +2462,19 @@ html.site-light .popup-entry-delete {
   background: #35c26e;
 }
 
+.key-badge-swipe {
+  left: 15px;
+  background: #b478ff;
+}
+
+.key-badge-swipe-legacy {
+  left: 15px;
+  background: transparent;
+  border: 1.5px solid #b478ff;
+  width: 5px;
+  height: 5px;
+}
+
 .layout-key-hint {
   position: absolute;
   top: 3px;
@@ -2474,6 +2487,21 @@ html.site-light .popup-entry-delete {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 方向性划动标签：上↑贴顶、下↓贴底，与 app 的 altText/altText1 上下布局一致 */
+.layout-key-hint-up {
+  top: 2px;
+}
+
+.layout-key-hint-down {
+  top: auto;
+  bottom: 2px;
+}
+
+/* 方向性键的主副文本走上下 hint 通道，旧单槽 alt 位不再重复显示 */
+.layout-key-directional .layout-key-alt {
+  display: none;
 }
 
 .layout-key-main {

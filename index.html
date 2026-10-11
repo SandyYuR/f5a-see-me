@@ -381,6 +381,7 @@
         <label>复制来源</label>
         <select id="layout-add-source"></select>
       </div>
+      <div class="status" id="layout-add-status"></div>
       <div class="toolbar">
         <button type="button" id="layout-add-dialog-cancel">取消</button>
         <button type="button" id="layout-add-dialog-save">添加</button>
@@ -501,7 +502,15 @@
     <form method="dialog" class="editor-form">
       <div class="dialog-titlebar"><h3>编辑标签</h3></div>
       <div class="form-row">
-        <label>划动标签</label>
+        <label>上划标签</label>
+        <input id="layout-key-labels-swipe-up" type="text">
+      </div>
+      <div class="form-row">
+        <label>下划标签</label>
+        <input id="layout-key-labels-swipe-down" type="text">
+      </div>
+      <div class="form-row">
+        <label>划动标签（旧）</label>
         <input id="layout-key-labels-swipe" type="text">
       </div>
       <div class="form-row">
@@ -529,7 +538,21 @@
         </div>
         <div id="layout-key-macro-tap-summary" class="status"></div>
       </div>
-      <div class="form-row">
+      <div class="form-row" id="layout-key-macro-swipe-up-row">
+        <div class="form-inline">
+          <button type="button" id="layout-key-macro-edit-swipe-up">上划事件…</button>
+          <button type="button" id="layout-key-macro-clear-swipe-up">清空</button>
+        </div>
+        <div id="layout-key-macro-swipe-up-summary" class="status"></div>
+      </div>
+      <div class="form-row" id="layout-key-macro-swipe-down-row">
+        <div class="form-inline">
+          <button type="button" id="layout-key-macro-edit-swipe-down">下划事件…</button>
+          <button type="button" id="layout-key-macro-clear-swipe-down">清空</button>
+        </div>
+        <div id="layout-key-macro-swipe-down-summary" class="status"></div>
+      </div>
+      <div class="form-row" id="layout-key-macro-swipe-row">
         <div class="form-inline">
           <button type="button" id="layout-key-macro-edit-swipe">划动事件…</button>
           <button type="button" id="layout-key-macro-clear-swipe">清空</button>

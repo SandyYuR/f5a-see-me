@@ -3086,10 +3086,75 @@
         if (!key || typeof key !== "object" || Array.isArray(key)) {
           throw new Error(`布局 ${name} 第 ${ri + 1} 行第 ${ki + 1} 个按键不是对象`);
         }
+        // 旧单槽划动先按 4eae6539 规则迁移，再按类型清理未知字段；
+        // 无方向线索的旧 swipe 保留原位（运行时按符号划动方向决定），不强制钉死。
+        migrateDirectionalSwipeFieldsForKey(key);
         normalizeKeyFieldsForType(key);
         if (key.rowHeightPercent != null) normalizeRowHeightKey(key);
       });
     });
+  }
+
+  // 与 app LayoutJsonUtils.legacySwipeTargetsUp 一致（4eae6539）：
+  // 只有上划一侧有槽位（上划宏或上滑标签）时旧字段跟到上滑，否则落到下滑。
+  // 主题「标点位置」与「符号划动方向」绝不参与判定。
+  function legacySwipeTargetsUp(hasUpMacro, hasDownMacro, hasUpLabel, hasDownLabel) {
+    return (hasUpMacro || hasUpLabel) && !(hasDownMacro || hasDownLabel);
+  }
+
+  // 与 app migrateDirectionalSwipeFields 一致：只有带方向线索的键才迁移
+  // （旧标签非空，或已有任一方向宏/方向标签）；SpaceKey 不参与。
+  // 宏与标签分别判断：各自已有方向字段时删旧字段，否则迁移旧字段。
+  function migrateDirectionalSwipeFieldsForKey(key) {
+    const type = String(key?.type || "").trim();
+    if (!keyTypeCapabilities(type).hasDirectionalSwipeActions) return false;
+    const legacyLabelField = type === "MacroKey" ? "altLabel" : "swipeLabel";
+    const hasNewMacro = key.swipeUp != null || key.swipeDown != null;
+    const hasNewLabel = key.swipeUpLabel != null || key.swipeDownLabel != null;
+    const legacyLabel = key[legacyLabelField];
+    const hasLegacyLabel = typeof legacyLabel === "string" ? legacyLabel.trim() !== "" : legacyLabel != null;
+    if (!hasLegacyLabel && !hasNewMacro && !hasNewLabel) return false;
+    let changed = false;
+    const targetsUp = legacySwipeTargetsUp(
+      key.swipeUp != null, key.swipeDown != null,
+      key.swipeUpLabel != null, key.swipeDownLabel != null
+    );
+    if (hasNewMacro) {
+      if ("swipe" in key) { delete key.swipe; changed = true; }
+    } else if ("swipe" in key) {
+      key[targetsUp ? "swipeUp" : "swipeDown"] = key.swipe;
+      delete key.swipe;
+      changed = true;
+    }
+    if (hasNewLabel) {
+      if (legacyLabelField in key) { delete key[legacyLabelField]; changed = true; }
+    } else if (legacyLabelField in key) {
+      key[targetsUp ? "swipeUpLabel" : "swipeDownLabel"] = key[legacyLabelField];
+      delete key[legacyLabelField];
+      changed = true;
+    }
+    return changed;
+  }
+
+  // validateRows / validateAuxBarMeta 内已逐键迁移（含 composeOverride 嵌套）；
+  // 保留本函数供其它调用方（如合成嵌套编辑保存）复用。
+  function migrateDirectionalSwipeFieldsInRows(rows) {
+    let changed = false;
+    (rows || []).forEach((row) => (row || []).forEach((key) => {
+      if (!key || typeof key !== "object" || Array.isArray(key)) return;
+      if (migrateDirectionalSwipeFieldsForKey(key)) changed = true;
+      // 合成覆盖内的嵌套键同样迁移（与 app migrateKey 递归一致）
+      const nested = key.composeOverride;
+      if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+        const copy = { ...nested, type: nested.type || key.type };
+        if (migrateDirectionalSwipeFieldsForKey(copy)) {
+          if (nested.type == null) delete copy.type;
+          key.composeOverride = copy;
+          changed = true;
+        }
+      }
+    }));
+    return changed;
   }
 
   function normalizeKeyFieldsForType(key) {
@@ -3105,13 +3170,32 @@
     if (!c.hasLabel) delete key.label;
     if (!c.hasSubLabel) delete key.subLabel;
     if (!c.hasDisplayText) delete key.displayText;
-    if (!c.hasSwipeLabel) delete key.swipeLabel;
+    if (!c.hasSwipeLabel) {
+      delete key.swipeLabel;
+    } else if (type === "SpaceKey") {
+      // SpaceKey 只保留旧单槽语义：不读方向字段
+      delete key.swipeUpLabel;
+      delete key.swipeDownLabel;
+    }
+    if (!c.hasDirectionalSwipeLabels) {
+      delete key.swipeUpLabel;
+      delete key.swipeDownLabel;
+    }
     if (!c.hasMacroLabels) {
       delete key.altLabel;
       delete key.longPressLabel;
     }
     if (!c.hasTapAction) delete key.tap;
-    if (!c.hasSwipeAction) delete key.swipe;
+    // 方向性宏（app putDirectionalSwipeFields）：有方向宏时旧 swipe 已在迁移/保存时清掉，
+    // 这里只按类型清理；无方向线索的旧 swipe 保留（createKeyDef 运行时按符号方向决定）。
+    if (!c.hasSwipeAction) {
+      delete key.swipe;
+      delete key.swipeUp;
+      delete key.swipeDown;
+    } else if (!c.hasDirectionalSwipeActions) {
+      delete key.swipeUp;
+      delete key.swipeDown;
+    }
     if (!c.hasLongPressAction) delete key.longPress;
     if (!c.hasNumpadSym) delete key.sym;
     if (c.hasNumpadSym) {
@@ -3192,6 +3276,7 @@
         if (!key || typeof key !== "object" || Array.isArray(key)) {
           throw new Error(`布局 ${name} 的 ${AUX_BAR_KEY}.keys 第 ${ki + 1} 个按键不是对象`);
         }
+        migrateDirectionalSwipeFieldsForKey(key);
         normalizeKeyFieldsForType(key);
         if (key.rowHeightPercent != null) normalizeRowHeightKey(key);
       });
@@ -3374,9 +3459,28 @@
     if (!key || typeof key !== "object") return "";
     if (key.type === "AlphabetKey") return key.alt || "";
     if (key.type === "PlaceholderKey") return key.alt || "";
-    if (key.type === "MacroKey") return key.altLabel || key.longPressLabel || "";
+    // MacroKey 副文本优先方向标签（app altText/altText1），旧 altLabel 只作兼容回退
+    if (key.type === "MacroKey") return key.swipeUpLabel || key.swipeDownLabel || key.altLabel || key.longPressLabel || "";
+    // 方向性键：上标签恒在上、下标签恒在下（app 4eae6539，不再读标点位置）；
+    // 预览 hint 行同时展示两侧，副文本取上标签
+    if (key.swipeUpLabel || key.swipeDownLabel) return key.swipeUpLabel || key.swipeDownLabel || "";
     if (key.swipeLabel) return key.swipeLabel;
     return "";
+  }
+
+  // 预览 hint：方向标签优先（上↑/下↓各一行），旧 swipeLabel 只作兼容回退
+  function keySwipeHintHtml(key) {
+    const parts = [];
+    if (typeof key.swipeUpLabel === "string" && key.swipeUpLabel.trim()) {
+      parts.push(`<span class="layout-key-hint layout-key-hint-up">↑${escapeHtml(key.swipeUpLabel.trim())}</span>`);
+    }
+    if (typeof key.swipeDownLabel === "string" && key.swipeDownLabel.trim()) {
+      parts.push(`<span class="layout-key-hint layout-key-hint-down">↓${escapeHtml(key.swipeDownLabel.trim())}</span>`);
+    }
+    if (!parts.length && typeof key.swipeLabel === "string" && key.swipeLabel.trim()) {
+      parts.push(`<span class="layout-key-hint">${escapeHtml(key.swipeLabel.trim())}</span>`);
+    }
+    return parts.join("");
   }
 
   // 分体预览：奇数字符行复制几何中间键（app splitKeyboardDuplicateMiddleKey 默认开）。
@@ -3406,6 +3510,9 @@
   }
 
   function resolvePreviewPunctPlacement(key, preferred, keyHeight) {
+    // 方向性标签（4eae6539）：上滑标签恒在上、下滑标签恒在下，不读标点位置；
+    // 高度不足时退同侧角落（下滑退右下角），双标签不足时两角各一，不吞标签。
+    if (key?.swipeUpLabel || key?.swipeDownLabel) return 'directional';
     if (preferred === 'none' || !keySubText(key)) return 'none';
     if (preferred === 'top-center') {
       const stackedMinHeight = previewMainFontMaxForKey(key) + 10 + 1;
@@ -3418,6 +3525,10 @@
     }
     return preferred;
   }
+
+  // text_editor 是文本编辑底部栏的布局（app TextEditingLayoutLoader.LAYOUT_NAME），
+  // 与普通键盘布局同属一份布局 JSON，编辑器内可直接增删改（baseNames 通用入口已覆盖）。
+  const TEXT_EDITOR_LAYOUT_NAME = "text_editor";
 
   function renderSelectors() {
     ensureSelection();
@@ -3709,6 +3820,7 @@
         const previewColors = resolvePreviewColorsForKey(key);
         const isActionKey = key.type === 'ReturnKey' || key.type === 'LayoutSwitchKey' || key.type === 'LayerSwitchKey';
         const punctPlacement = resolvePreviewPunctPlacement(key, punctPos, keyHeight);
+        const isDirectional = punctPlacement === 'directional';
         const keyExtraClasses = [
           cfg.borderEnabled ? '' : 'no-border',
           cfg.borderEnabled && !cfg.borderOutline ? 'border-shadow' : '',
@@ -3718,20 +3830,21 @@
             : (key.type === 'ReturnKey' || (cfg.gboardStyle && (key.type === 'LayoutSwitchKey' || key.type === 'LayerSwitchKey'))))
             ? 'gboard-pill'
             : '',
-          punctPlacement === 'bottom' ? 'punct-bottom' : punctPlacement === 'top-center' ? 'punct-top-center' : ''
+          punctPlacement === 'bottom' ? 'punct-bottom' : punctPlacement === 'top-center' ? 'punct-top-center' : '',
+          isDirectional ? 'layout-key-directional' : ''
         ].filter(Boolean).join(' ');
         const borderWidth = cfg.borderEnabled ? (cfg.borderOutline ? 1 : 0) : 0;
         const keyStyle = `--preview-key-bg:${previewColors.backgroundCss};color:${previewColors.textCss};border-color:${previewColors.borderCss};--preview-key-shadow:${previewColors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
-        const alt = keySubText(key) && punctPlacement !== 'none'
+        const alt = (keySubText(key) && punctPlacement !== 'none' && punctPlacement !== 'directional')
           ? `<span class="layout-key-alt ${punctPlacement === 'bottom' ? 'bottom' : punctPlacement === 'top-center' ? 'top-center' : ''}" style="color:${escapeAttr(previewColors.altTextCss)}">${escapeHtml(keySubText(key))}</span>`
           : "";
         let hint = "";
-        if (state.previewShowHints !== false && typeof key.swipeLabel === "string" && key.swipeLabel.trim()) {
-          hint = `<span class="layout-key-hint">${escapeHtml(key.swipeLabel.trim())}</span>`;
-        }
+        if (state.previewShowHints !== false) hint = keySwipeHintHtml(key);
         let badges = "";
         if (key.longPress) badges += `<span class="key-badge key-badge-lp" title="长按事件"></span>`;
         if (key.tap) badges += `<span class="key-badge key-badge-macro" title="含宏动作"></span>`;
+        if (key.swipeUp || key.swipeDown) badges += `<span class="key-badge key-badge-swipe" title="含上下划动"></span>`;
+        else if (key.swipe) badges += `<span class="key-badge key-badge-swipe-legacy" title="含划动（旧单槽）"></span>`;
         const originalIndex = typeof key.__dupOf === "number" ? key.__dupOf : keyIndex;
         const previewEditTitle = `${keyTypeLabel(key.type)}。点击按键可直接编辑`;
         // PlaceholderKey 始终只承担布局占位，不在预览中绘制成独立按键；
@@ -4994,6 +5107,9 @@
   function keyTypeCapabilities(type) {
     const displayTextTypes = new Set(["AlphabetKey", "MacroKey"]);
     const swipeTypes = new Set(["LayoutSwitchKey", "SymbolKey", "CapsKey", "ReturnKey", "BackspaceKey"]);
+    // 方向性划动（app d156052b+4f0d6fb8）：普通键与宏键均支持上下分离；
+    // SpaceKey 只保留旧单槽 swipe/swipeLabel（f84084c3），不参与方向迁移。
+    const directionalTypes = new Set(["LayoutSwitchKey", "SymbolKey", "CapsKey", "ReturnKey", "BackspaceKey", "MacroKey"]);
     const labelTypes = new Set(["LayoutSwitchKey", "SymbolKey", "MacroKey"]);
     return {
       // PlaceholderKey：主=显示文本（可空，原样显示），副=副文本；无任何行为/弹出
@@ -5004,10 +5120,13 @@
       hasSubLabel: type === "LayoutSwitchKey",
       hasEditableSubLabel: false,
       hasDisplayText: displayTextTypes.has(type),
-      hasSwipeLabel: swipeTypes.has(type),
+      hasSwipeLabel: swipeTypes.has(type) || type === "SpaceKey",
+      hasDirectionalSwipeLabels: directionalTypes.has(type),
       hasMacroLabels: type === "MacroKey",
       hasTapAction: type === "MacroKey",
-      hasSwipeAction: type === "MacroKey" || swipeTypes.has(type),
+      hasSwipeAction: type === "MacroKey" || swipeTypes.has(type) || type === "SpaceKey",
+      hasDirectionalSwipeActions: directionalTypes.has(type),
+      hasSpaceSwipeAction: type === "SpaceKey",
       hasLongPressAction: type === "MacroKey",
       // NumPadKey：数字符号下拉（label + sym）；LayoutSwitchKey：切换目标下拉（subLabel）
       hasNumpadSym: type === "NumPadKey",
@@ -5062,7 +5181,7 @@
     const inAuxBarEdit = keyDialogState.auxBarMode === true && keyDialogState.rowIndex === -1 && !inComposeEdit;
     const canEditCompose = !inComposeEdit && !inAuxBarEdit;
     const showDisplay = c.hasDisplayText;
-    const showLabels = c.hasSwipeLabel || c.hasMacroLabels;
+    const showLabels = c.hasSwipeLabel || c.hasDirectionalSwipeLabels || c.hasMacroLabels;
     const showMacro = c.hasTapAction || c.hasSwipeAction || c.hasLongPressAction;
     document.querySelectorAll(".key-basic-main, .key-basic-alt").forEach((node) => { node.hidden = !c.hasMainAlt; });
     document.querySelectorAll(".key-basic-label").forEach((node) => { node.hidden = !c.hasLabel; });
@@ -5107,12 +5226,23 @@
     if (!c.hasDisplayText && keyDialogState.draft) delete keyDialogState.draft.displayText;
     if (!c.hasSubLabel && keyDialogState.draft) delete keyDialogState.draft.subLabel;
     if (!c.hasSwipeLabel && keyDialogState.draft) delete keyDialogState.draft.swipeLabel;
+    if (keyDialogState.draft && (keyDialogState.draft.type === "SpaceKey" || !c.hasDirectionalSwipeLabels)) {
+      delete keyDialogState.draft.swipeUpLabel;
+      delete keyDialogState.draft.swipeDownLabel;
+    }
     if (!c.hasMacroLabels && keyDialogState.draft) {
       delete keyDialogState.draft.altLabel;
       delete keyDialogState.draft.longPressLabel;
     }
     if (!c.hasTapAction && keyDialogState.draft) delete keyDialogState.draft.tap;
-    if (!c.hasSwipeAction && keyDialogState.draft) delete keyDialogState.draft.swipe;
+    if (!c.hasSwipeAction && keyDialogState.draft) {
+      delete keyDialogState.draft.swipe;
+      delete keyDialogState.draft.swipeUp;
+      delete keyDialogState.draft.swipeDown;
+    } else if (keyDialogState.draft && !c.hasDirectionalSwipeActions) {
+      delete keyDialogState.draft.swipeUp;
+      delete keyDialogState.draft.swipeDown;
+    }
     if (!c.hasLongPressAction && keyDialogState.draft) delete keyDialogState.draft.longPress;
     if (inComposeEdit && keyDialogState.draft) {
       delete keyDialogState.draft.weight;
@@ -5135,8 +5265,12 @@
     [
       ["layout-key-macro-edit-tap", c.hasTapAction],
       ["layout-key-macro-clear-tap", c.hasTapAction],
-      ["layout-key-macro-edit-swipe", c.hasSwipeAction],
-      ["layout-key-macro-clear-swipe", c.hasSwipeAction],
+      ["layout-key-macro-edit-swipe-up", c.hasDirectionalSwipeActions],
+      ["layout-key-macro-clear-swipe-up", c.hasDirectionalSwipeActions],
+      ["layout-key-macro-edit-swipe-down", c.hasDirectionalSwipeActions],
+      ["layout-key-macro-clear-swipe-down", c.hasDirectionalSwipeActions],
+      ["layout-key-macro-edit-swipe", c.hasSwipeAction && !c.hasDirectionalSwipeActions],
+      ["layout-key-macro-clear-swipe", c.hasSwipeAction && !c.hasDirectionalSwipeActions],
       ["layout-key-macro-edit-long-press", c.hasLongPressAction],
       ["layout-key-macro-clear-long-press", c.hasLongPressAction]
     ].forEach(([id, enabled]) => {
@@ -5171,7 +5305,17 @@
         (typeof key.displayText === "string" ? `显示文本：${key.displayText || "(空)"}` : `显示文本：${Object.keys(key.displayText || {}).length} 条映射`));
     setStatus("layout-key-display-text-summary", displaySummary, "");
     const labelParts = [];
-    if (c.hasSwipeLabel) labelParts.push(`swipeLabel${key.swipeLabel ? "✓" : "×"}`);
+    if (c.hasDirectionalSwipeLabels) {
+      labelParts.push(`swipeUpLabel${key.swipeUpLabel ? "✓" : "×"}`);
+      labelParts.push(`swipeDownLabel${key.swipeDownLabel ? "✓" : "×"}`);
+      if (type === "MacroKey") {
+        if (key.altLabel) labelParts.push(`altLabel(旧)${"✓"}`);
+      } else if (key.swipeLabel) {
+        labelParts.push(`swipeLabel(旧)${"✓"}`);
+      }
+    } else {
+      if (c.hasSwipeLabel) labelParts.push(`swipeLabel${key.swipeLabel ? "✓" : "×"}`);
+    }
     if (c.hasMacroLabels) {
       labelParts.push(`altLabel${key.altLabel ? "✓" : "×"}`);
       labelParts.push(`longPressLabel${key.longPressLabel ? "✓" : "×"}`);
@@ -5179,7 +5323,13 @@
     setStatus("layout-key-labels-summary", `标签：${labelParts.length ? labelParts.join(" / ") : "当前类型不适用"}`, "");
     const macroParts = [];
     if (c.hasTapAction) macroParts.push(`tap${key.tap ? "✓" : "×"}`);
-    if (c.hasSwipeAction) macroParts.push(`swipe${key.swipe ? "✓" : "×"}`);
+    if (c.hasDirectionalSwipeActions) {
+      macroParts.push(`swipeUp${key.swipeUp ? "✓" : "×"}`);
+      macroParts.push(`swipeDown${key.swipeDown ? "✓" : "×"}`);
+      if (key.swipe) macroParts.push(`swipe(旧)${"✓"}`);
+    } else if (c.hasSwipeAction) {
+      macroParts.push(`swipe${key.swipe ? "✓" : "×"}`);
+    }
     if (c.hasLongPressAction) macroParts.push(`longPress${key.longPress ? "✓" : "×"}`);
     setStatus("layout-key-macro-summary", `事件：${macroParts.length ? macroParts.join(" / ") : "当前类型不适用"}`, "");
     const colorFields = availableColorFieldsForType(type);
@@ -5406,10 +5556,22 @@
     el("layout-key-labels-swipe").value = key.swipeLabel || "";
     el("layout-key-labels-alt").value = key.altLabel || "";
     el("layout-key-labels-long-press").value = key.longPressLabel || "";
+    el("layout-key-labels-swipe-up").value = key.swipeUpLabel || "";
+    el("layout-key-labels-swipe-down").value = key.swipeDownLabel || "";
     const swipeRow = el("layout-key-labels-swipe")?.closest(".form-row");
     const altRow = el("layout-key-labels-alt")?.closest(".form-row");
     const longPressRow = el("layout-key-labels-long-press")?.closest(".form-row");
-    if (swipeRow) swipeRow.hidden = !c.hasSwipeLabel;
+    const swipeUpRow = el("layout-key-labels-swipe-up")?.closest(".form-row");
+    const swipeDownRow = el("layout-key-labels-swipe-down")?.closest(".form-row");
+    // 普通键的旧 swipeLabel 与新方向标签同屏：旧槽位仅作兼容显示，提示用户迁移；
+    // MacroKey 的旧 altLabel 同理（保存时按 4eae6539 规则迁移）。SpaceKey 只用旧槽位。
+    if (swipeRow) swipeRow.hidden = !c.hasSwipeLabel || (c.hasDirectionalSwipeLabels && key.type !== "SpaceKey");
+    // SpaceKey 互斥提示（app f84084c3）：开关默认开启=光标手势接管，划动动作不生效
+    if (swipeRow && !swipeRow.hidden && key.type === "SpaceKey") {
+      swipeRow.title = "仅在「划动空格键以移动光标」关闭时生效（该开关默认开启）";
+    }
+    if (swipeUpRow) swipeUpRow.hidden = !c.hasDirectionalSwipeLabels;
+    if (swipeDownRow) swipeDownRow.hidden = !c.hasDirectionalSwipeLabels;
     if (altRow) altRow.hidden = !c.hasMacroLabels;
     if (longPressRow) longPressRow.hidden = !c.hasMacroLabels;
     el("layout-key-labels-dialog").showModal();
@@ -5417,8 +5579,15 @@
 
   function saveLabelsDialog() {
     const key = keyDialogState.draft || {};
-    const c = keyTypeCapabilities(key.type || "AlphabetKey");
-    if (c.hasSwipeLabel) {
+    const type = key.type || "AlphabetKey";
+    const c = keyTypeCapabilities(type);
+    if (type === "SpaceKey") {
+      // SpaceKey 只用旧单槽（f84084c3）：方向输入框不参与，避免误写
+      const swipe = el("layout-key-labels-swipe").value.trim();
+      if (swipe) key.swipeLabel = swipe; else delete key.swipeLabel;
+      delete key.swipeUpLabel;
+      delete key.swipeDownLabel;
+    } else if (c.hasSwipeLabel) {
       const swipe = el("layout-key-labels-swipe").value.trim();
       if (swipe) key.swipeLabel = swipe; else delete key.swipeLabel;
     } else {
@@ -5433,6 +5602,21 @@
       delete key.altLabel;
       delete key.longPressLabel;
     }
+    // 方向性划动标签（app d156052b/4f0d6fb8/4eae6539）：MacroKey 走 alt 槽位同排的上/下输入，
+    // 普通键走 swipe 槽位同排的上/下输入；普通键的旧 swipeLabel 保留兼容。
+    if (c.hasDirectionalSwipeLabels) {
+      const up = el("layout-key-labels-swipe-up").value.trim();
+      const down = el("layout-key-labels-swipe-down").value.trim();
+      if (up) key.swipeUpLabel = up; else delete key.swipeUpLabel;
+      if (down) key.swipeDownLabel = down; else delete key.swipeDownLabel;
+      // 新旧标签不并存（与 app putDirectionalSwipeFields 一致）：
+      // 一旦配了任一方向标签，就清掉旧标签，避免运行时歧义。
+      if (up || down) {
+        if (type === "MacroKey") delete key.altLabel;
+        else delete key.swipeLabel;
+      }
+      // MacroKey 的旧 altLabel 只读兼容：打开含旧标签的键时迁移提示由校验给出
+    }
     keyDialogState.draft = key;
     refreshKeyDialogSummaries();
     el("layout-key-labels-dialog").close();
@@ -5444,7 +5628,29 @@
     syncMacroEventButtonsEnabled(key.type || "AlphabetKey");
     setStatus("layout-key-macro-tap-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.tap)), "");
     setStatus("layout-key-macro-swipe-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.swipe)), "");
+    setStatus("layout-key-macro-swipe-up-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.swipeUp)), "");
+    setStatus("layout-key-macro-swipe-down-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.swipeDown)), "");
     setStatus("layout-key-macro-long-press-summary", formatMacroStepsSummary(readMacroStepsFromAction(key.longPress)), "");
+    // 方向性宏与旧单槽不并列显示：有方向宏时旧 swipe 行隐藏，只读提示迁移；
+    // 无方向宏时旧行显示并标注兼容态。SpaceKey 只用旧单槽。
+    const c = keyTypeCapabilities(key.type || "AlphabetKey");
+    const legacyRow = el("layout-key-macro-swipe-row");
+    if (legacyRow) {
+      legacyRow.hidden = c.hasDirectionalSwipeActions
+        ? (key.swipeUp != null || key.swipeDown != null)
+        : !c.hasSwipeAction;
+      // SpaceKey 互斥提示（app f84084c3）：开关开（默认）时光标手势接管，划动动作不生效
+      const legacySummary = el("layout-key-macro-swipe-summary");
+      if (legacySummary && c.hasSpaceSwipeAction) {
+        const cur = legacySummary.textContent || "";
+        const note = "（空格键划动动作仅在「划动空格键以移动光标」关闭时生效，默认开启=光标手势接管）";
+        if (key.swipe && !cur.includes("仅在")) legacySummary.textContent = `${cur}${note}`;
+      }
+    }
+    const upRow = el("layout-key-macro-swipe-up-row");
+    if (upRow) upRow.hidden = !c.hasDirectionalSwipeActions;
+    const downRow = el("layout-key-macro-swipe-down-row");
+    if (downRow) downRow.hidden = !c.hasDirectionalSwipeActions;
     el("layout-key-macro-dialog").showModal();
   }
 
@@ -5452,7 +5658,18 @@
     const key = keyDialogState.draft || {};
     const c = keyTypeCapabilities(key.type || "AlphabetKey");
     if (!c.hasTapAction) delete key.tap;
-    if (!c.hasSwipeAction) delete key.swipe;
+    if (!c.hasSwipeAction) {
+      delete key.swipe;
+      delete key.swipeUp;
+      delete key.swipeDown;
+    } else if (!c.hasDirectionalSwipeActions) {
+      delete key.swipeUp;
+      delete key.swipeDown;
+    } else {
+      // 新旧宏不并存（与 app putDirectionalSwipeFields 一致）：
+      // 一旦配了任一方向宏，就清掉旧 swipe，避免运行时从另一方向漏出来。
+      if (key.swipeUp != null || key.swipeDown != null) delete key.swipe;
+    }
     if (!c.hasLongPressAction) delete key.longPress;
     keyDialogState.draft = key;
     refreshKeyDialogSummaries();
@@ -5600,13 +5817,17 @@
   function openMacroEventEditor(eventName) {
     resetMacroStepDragState();
     const key = keyDialogState.draft || {};
-    const actionKey = eventName === "tap" ? "tap" : eventName === "swipe" ? "swipe" : "longPress";
+    // 方向性事件：swipeUp/swipeDown；旧单槽 swipe 仅 SpaceKey 与无方向键保留
+    const actionKey = eventName === "tap" ? "tap"
+      : eventName === "swipeUp" ? "swipeUp"
+      : eventName === "swipeDown" ? "swipeDown"
+      : eventName === "swipe" ? "swipe" : "longPress";
     state.macroEventEditor = {
       eventName,
       steps: readMacroStepsFromAction(key[actionKey])
     };
     renderMacroEventEditor();
-    const eventNameMap = { tap: "点击事件", swipe: "划动事件", longPress: "长按事件" };
+    const eventNameMap = { tap: "点击事件", swipeUp: "上划事件", swipeDown: "下划事件", swipe: "划动事件", longPress: "长按事件" };
     el("layout-key-macro-event-title").textContent = `编辑 ${eventNameMap[eventName] || eventName}`;
     el("layout-key-macro-event-dialog").showModal();
   }
@@ -5823,13 +6044,15 @@
     }
     const action = buildMacroActionFromSteps(normalized);
     const key = keyDialogState.draft || {};
-    const actionKey = state.macroEventEditor.eventName === "tap"
-      ? "tap"
-      : state.macroEventEditor.eventName === "swipe"
-        ? "swipe"
-        : "longPress";
+    const evName = state.macroEventEditor.eventName;
+    const actionKey = evName === "tap" ? "tap"
+      : evName === "swipeUp" ? "swipeUp"
+      : evName === "swipeDown" ? "swipeDown"
+      : evName === "swipe" ? "swipe" : "longPress";
     if (action) key[actionKey] = action;
     else delete key[actionKey];
+    // 新旧宏不并存：方向宏任一存在即清旧 swipe（与 app putDirectionalSwipeFields 一致）
+    if ((key.swipeUp != null || key.swipeDown != null) && evName !== "swipe") delete key.swipe;
     keyDialogState.draft = key;
     el("layout-key-macro-event-dialog").close();
     openMacroDialog();
@@ -6619,6 +6842,7 @@
     keyDialogState.keyIndex = parent.keyIndex;
     keyDialogState.draft = deepClone(parent.draft);
     if (save && editedCompose && editedCompose.type) {
+      migrateDirectionalSwipeFieldsForKey(editedCompose);
       keyDialogState.draft.composeOverride = editedCompose;
     }
     state.composeNestedContext = null;
@@ -7489,7 +7713,9 @@
     sourceSelect.value = (csNode && csNode.value) || entryKey(state.selectedBase, state.selectedSubmode);
     el("layout-add-kind").value = "layout";
     el("layout-add-name").value = "";
+    // text_editor 快捷入口：下拉下方提示用户可直接建 text_editor（app 侧同样是普通布局名）
     syncAddDialogByKind();
+    setStatus("layout-add-status", "提示：文本编辑底部栏布局名为 text_editor（与 app TextEditingLayoutLoader 一致），建好后可直接编辑。", "");
     el("layout-add-dialog").showModal();
   }
 
@@ -7999,7 +8225,22 @@
         ctx.restore();
         const hasAlt = !!keySubText(key) && punctPos !== 'none';
         const punctPlacement = resolvePreviewPunctPlacement(key, punctPos, keyH);
-        if (punctPlacement === 'bottom' && hasAlt) {
+        const directionalUp = typeof key.swipeUpLabel === "string" ? key.swipeUpLabel.trim() : "";
+        const directionalDown = typeof key.swipeDownLabel === "string" ? key.swipeDownLabel.trim() : "";
+        if (punctPlacement === 'directional' && (directionalUp || directionalDown)) {
+          // 方向性标签走上下通道（上↑贴顶、下↓贴底），与 DOM 预览一致
+          drawCenteredText(ctx, previewTitleFromObj(key), keyX, keyY, keyW, keyH, previewMainFontMaxForKey(key), fg);
+          if (directionalUp) drawRightTopText(ctx, `↑${directionalUp}`, keyX, keyY, keyW, 10, previewColors.altTextCss);
+          if (directionalDown) {
+            ctx.save();
+            ctx.font = `500 10px Arial, sans-serif`;
+            ctx.fillStyle = previewColors.altTextCss;
+            ctx.textAlign = "right";
+            ctx.textBaseline = "alphabetic";
+            ctx.fillText(`↓${directionalDown}`, keyX + keyW - 4, keyY + keyH - 4, keyW - 8);
+            ctx.restore();
+          }
+        } else if (punctPlacement === 'bottom' && hasAlt) {
           const mainH = Math.max(1, keyH - 12);
           drawCenteredText(ctx, previewTitleFromObj(key), keyX, keyY, keyW, mainH, previewMainFontMaxForKey(key), fg);
           drawCenteredText(ctx, keySubText(key), keyX, keyY + mainH - 1, keyW, keyH - mainH + 1, 10, previewColors.altTextCss, 500, 6);
