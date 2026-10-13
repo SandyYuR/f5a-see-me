@@ -2852,8 +2852,10 @@
     const v = layout[base];
     if (isRows(v)) return [DEFAULT_SUBMODE];
     if (!v || typeof v !== "object" || Array.isArray(v)) return [];
-    return Object.keys(v)
-      .filter((k) => k !== META_KEY && !isVariantSubLayoutKey(k))
+    const names = Object.keys(v).filter((k) => k !== META_KEY && !isVariantSubLayoutKey(k));
+    // 只有分体排列时仍可选择所属布局；沿用磁盘中的方案键，不改为显示名称。
+    if (getVariantRowsForLayout(v) && !names.includes(DEFAULT_SUBMODE)) names.push(DEFAULT_SUBMODE);
+    return names
       .sort((a, b) => {
         if (a === DEFAULT_SUBMODE) return -1;
         if (b === DEFAULT_SUBMODE) return 1;
@@ -2890,6 +2892,11 @@
 
   function isVariantSubLayoutKey(key) {
     return String(key).startsWith(VARIANT_SUBMODE_PREFIX);
+  }
+
+  function getVariantRowsForLayout(container) {
+    const raw = container?.[VARIANT_SUBMODE_PREFIX + SPLIT_VARIANT_KEY];
+    return isRows(raw) ? raw : raw && isRows(raw.default) ? raw.default : null;
   }
 
   // 读取某条目（base+submode）的分体变体行；不存在时返回 null（调用方回退 docked）
@@ -3018,9 +3025,9 @@
     state.layout[base][submode] = rows;
   }
 
-  function getMetaContainer(base, submode = state.selectedSubmode, create = false) {
+  function getMetaContainer(base, submode = state.selectedSubmode, create = false, split = state.editingSplit) {
     // 分体编辑态：读写 variant 条目自己的 __meta__（app 端 variant 条目可带 meta）
-    if (state.editingSplit) {
+    if (split) {
       const v0 = state.layout[base];
       const containerKey0 = submode === DEFAULT_SUBMODE ? null : submode;
       let container0;
@@ -3370,7 +3377,8 @@
   }
 
   function getAuxBarMeta(base = state.selectedBase, submode = state.selectedSubmode, create = false) {
-    const meta = getMetaContainer(base, submode, create);
+    // 辅助栏属于子布局，普通/分体共用；高度等其它元数据仍可属于分体排列。
+    const meta = getMetaContainer(base, submode, create, false);
     if (!meta) return null;
     if (!meta[AUX_BAR_KEY]) {
       if (!create) return null;
@@ -3380,8 +3388,7 @@
   }
 
   function getAuxBarConfig(base = state.selectedBase, submode = state.selectedSubmode) {
-    const meta = getMetaContainer(base, submode, false);
-    const auxBar = meta?.[AUX_BAR_KEY];
+    const auxBar = getAuxBarMeta(base, submode, false);
     const normalized = normalizeAuxBarMeta(auxBar);
     return normalized && normalized.position ? { position: normalized.position, sizePercent: normalized.size_percent } : null;
   }
@@ -3391,11 +3398,11 @@
       // 清除位置配置：若存在自定义按键则以 keys-only 形态保留（与 App 行为一致）
       const keys = getAuxBarKeys(base, submode);
       if (keys.length) {
-        const meta = getMetaContainer(base, submode, true);
+        const meta = getMetaContainer(base, submode, true, false);
         // 统一存储为单行嵌套形态 keys: [[...]]
         meta[AUX_BAR_KEY] = { keys: [deepClone(keys)] };
       } else {
-        const meta = getMetaContainer(base, submode, false);
+        const meta = getMetaContainer(base, submode, false, false);
         if (meta) delete meta[AUX_BAR_KEY];
       }
       return;
@@ -3414,8 +3421,7 @@
   }
 
   function getAuxBarKeys(base = state.selectedBase, submode = state.selectedSubmode) {
-    const meta = getMetaContainer(base, submode, false);
-    const auxBar = meta?.[AUX_BAR_KEY];
+    const auxBar = getAuxBarMeta(base, submode, false);
     const normalized = normalizeAuxBarMeta(auxBar);
     return normalized?.keys || [];
   }
@@ -3431,7 +3437,7 @@
       delete auxBar.keys;
     }
     if (!auxBar.position && !Array.isArray(auxBar.keys)) {
-      const meta = getMetaContainer(base, submode, false);
+      const meta = getMetaContainer(base, submode, false, false);
       if (meta) delete meta[AUX_BAR_KEY];
     }
   }
@@ -3635,7 +3641,7 @@
   // - 中缝对齐（默认开）：两侧各缩到 (1-gap)/2；侧内弹性键保留 30%..55% 份额
   // - 关闭对齐：承载键按「池内」归一化 × (1-gap)（占位键不进池，加占位键不挤压其它键），
   //   占位键按绝对宽 × (1-gap) 位移；两侧之和超 1-2% 时 fitSides 等比压窄保底
-  function resolveSplitRowLayout(row, gapFrac, alignHalves) {
+  function resolveSplitRowLayout(row, gapFrac, alignHalves, keyAreaScale = 1) {
     if (!row || row.length < 2) return null;
     const keyWeightOf = (key) => {
       const n = Number(keyWeight(key));
@@ -3667,7 +3673,7 @@
           ? fallbackW.reduce((a, b) => a + b, 0) / fallbackW.length
           : 1 / Math.max(1, row.length);
       const assigned = {};
-      nonBridge.forEach((i) => { assigned[i] = (isFixed(i) ? keyWeightOf(row[i]) : refWidth) * splitScale; });
+      nonBridge.forEach((i) => { assigned[i] = (isFixed(i) ? keyWeightOf(row[i]) : refWidth) * splitScale * keyAreaScale; });
       const sumAssigned = () => nonBridge.reduce((a, i) => a + (assigned[i] || 0), 0);
       const flexIndices = nonBridge.filter((i) => !isFixed(i));
       const fixedIndices = nonBridge.filter((i) => isFixed(i));
@@ -3790,6 +3796,8 @@
 
     const leftAdjusted = forSide(leftIndices);
     const rightAdjusted = forSide(rightIndices);
+    leftIndices.forEach((i) => { leftAdjusted[i] *= keyAreaScale; });
+    rightIndices.forEach((i) => { rightAdjusted[i] *= keyAreaScale; });
     if (!alignHalves) {
       // fitSides：两侧之和超过 1 - 2% 时等比收窄，保底中缝
       const leftTotal = leftIndices.reduce((a, i) => a + (leftAdjusted[i] || 0), 0);
@@ -3819,6 +3827,15 @@
   function previewKeyFaceHtml(key) {
     const icon = PREVIEW_SPECIAL_KEY_ICONS[key?.type];
     return icon || escapeHtml(previewTitleFromObj(key));
+  }
+
+  function resolveAuxBarPreviewGeometry(config, split, gapFraction) {
+    const sizeFraction = (Number(config?.sizePercent) || 0) / 100;
+    if (!split || (config?.position !== "left" && config?.position !== "right")) {
+      return { sizePercent: sizeFraction * 100, keyAreaScale: 1 };
+    }
+    const scaledFraction = sizeFraction * (1 - gapFraction);
+    return { sizePercent: scaledFraction * 100, keyAreaScale: (1 - sizeFraction) / (1 - scaledFraction) };
   }
 
   function renderLayoutPreview() {
@@ -3851,6 +3868,7 @@
     // 分体预览跟随工具栏的「分体键盘」开关；布局编辑态仍决定是否读取 variant:split 行，
     // 中缝宽度/对齐开关是独立的预览参数。
     const splitRender = previewSplit && splitGapFrac >= 0.05;
+    const auxGeometry = resolveAuxBarPreviewGeometry(auxBarConfig, splitRender, splitGapFrac);
     const splitAlignHalves = state.themeAppSync.splitAlignHalves !== false;
     applyPreviewThemeSurface();
     root.style.setProperty('--preview-row-gap', '8px');
@@ -3868,7 +3886,7 @@
       );
       const keyHeight = effectivePreviewKeyHeight(rowHeight, keyVGap);
       const workRow = splitRender ? duplicateMiddleKeyForPreview(row) : row;
-      const splitLayout = splitRender ? resolveSplitRowLayout(workRow, splitGapFrac, splitAlignHalves) : null;
+      const splitLayout = splitRender ? resolveSplitRowLayout(workRow, splitGapFrac, splitAlignHalves, auxGeometry.keyAreaScale) : null;
       const widths = splitLayout ? splitLayout.widths : resolveRegularRowWidths(workRow);
       return `<div class="layout-row" style="--row-height:${rowHeight}px;--key-height:${keyHeight}px"><div class="keys">${workRow.map((key, keyIndex) => {
         const w = widths[keyIndex] || 0;
@@ -3919,7 +3937,7 @@
         return slotHtml;
       }).join("")}</div></div>`;
     }).join("");
-    root.innerHTML = buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg);
+    root.innerHTML = buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg, auxGeometry);
     requestAnimationFrame(() => {
       pinPreviewContainerWidth();
       syncPreviewBlurMaskGeometry();
@@ -3935,7 +3953,7 @@
     updateFixedChromeMetrics();
   }
 
-  function buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg) {
+  function buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg, geometry = resolveAuxBarPreviewGeometry(auxBarConfig, false, 0)) {
     if (!auxBarConfig) return rowsHtml;
     const verticalHeights = resolveRowHeightPercents(auxBarKeys.map((key) => [key]));
     const borderWidth = cfg.borderEnabled ? (cfg.borderOutline ? 1 : 0) : 0;
@@ -3947,7 +3965,7 @@
     const auxKeysHtml = auxBarKeys.length
       ? `<div class="keys aux-bar-keys">${auxBarKeys.map(chipOf).join("")}</div>`
       : `<div class="aux-bar-placeholder">辅助选择栏（无按键，运行时显示候选标签页）</div>`;
-    const auxHtml = `<div class="aux-bar-preview aux-bar-${escapeAttr(auxBarConfig.position)}" style="--aux-bar-size:${auxBarConfig.sizePercent}%">${auxKeysHtml}</div>`;
+    const auxHtml = `<div class="aux-bar-preview aux-bar-${escapeAttr(auxBarConfig.position)}" style="--aux-bar-size:${geometry.sizePercent}%">${auxKeysHtml}</div>`;
     const position = auxBarConfig.position;
     if (position === "above_preedit") {
       return `<div class="aux-bar-above-preedit">${auxHtml}</div>${rowsHtml}`;
@@ -3959,10 +3977,10 @@
       return `${rowsHtml}${auxHtml}`;
     }
     if (position === "left") {
-      return `<div class="aux-bar-hwrap"><div class="aux-bar-vwrap aux-bar-left-v">${auxHtml}</div><div class="aux-bar-main">${rowsHtml}</div></div>`;
+      return `<div class="aux-bar-hwrap" style="--aux-bar-size:${geometry.sizePercent}%"><div class="aux-bar-vwrap aux-bar-left-v">${auxHtml}</div><div class="aux-bar-main">${rowsHtml}</div></div>`;
     }
     if (position === "right") {
-      return `<div class="aux-bar-hwrap"><div class="aux-bar-main">${rowsHtml}</div><div class="aux-bar-vwrap aux-bar-right-v">${auxHtml}</div></div>`;
+      return `<div class="aux-bar-hwrap" style="--aux-bar-size:${geometry.sizePercent}%"><div class="aux-bar-main">${rowsHtml}</div><div class="aux-bar-vwrap aux-bar-right-v">${auxHtml}</div></div>`;
     }
     return rowsHtml;
   }
@@ -4028,14 +4046,13 @@
       root.style.width = "";
       return;
     }
-    // Measure max row width after layout settles, set container to match
-    const keysRows = root.querySelectorAll(".layout-row .keys");
-    let maxW = 0;
-    keysRows.forEach((row) => { maxW = Math.max(maxW, row.offsetWidth); });
-    if (maxW > 0) {
+    // 按完整键盘画布定宽，不能用辅助栏内部的主行宽度反向收缩容器。
+    const contentWidth = Number.parseFloat(root.style.getPropertyValue("--preview-keyboard-max-width"));
+    if (Number.isFinite(contentWidth) && contentWidth > 0) {
       const centerWidth = root.closest(".preview-center")?.clientWidth || Infinity;
-      // 20 = 10px padding * 2 (box-sizing:border-box, no border).
-      root.style.width = `${Math.min(maxW + 20, centerWidth)}px`;
+      const style = getComputedStyle(root);
+      const padding = (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
+      root.style.width = `${Math.min(contentWidth + padding, centerWidth)}px`;
     }
   }
 
@@ -5148,7 +5165,7 @@
         delete auxBar.position;
         delete auxBar.size_percent;
         if (!Array.isArray(auxBar.keys)) {
-          const meta = getMetaContainer(base, submode, false);
+          const meta = getMetaContainer(base, submode, false, false);
           if (meta) delete meta[AUX_BAR_KEY];
         }
       } else {

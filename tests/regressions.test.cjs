@@ -31,7 +31,7 @@ function loadApp() {
     syncLayoutUiFromState = renderThemeList = renderThemeEditor = syncThemeJsonFromState = () => {};
     renderPopupEditor = syncPopupJsonFromState = renderIconThemeEditor = syncIconThemeJsonFromState = () => {};
     syncPreviewToolbarUi = syncThemeAppSyncUiFromState = refreshKeyDialogSummaries = () => {};
-    window.testApi = { state, history, keyDialogState, beginHistoryTracking, commitHistorySnapshot, scheduleHistoryCommit, undo, redo, saveDraftNow, currentHistorySnapshot, restoreSnapshot, normalizeLayoutObject, applyMainFieldsToDraft, updateDraftFromMainFields, normalizeRowHeightKey, renderSvgPreviewHtml, resolvePreviewColorsForKey, resolveThemeTokenColor, argbToCss, buildAuxBarPreviewHtml, editorKeyLabel, restoreDraftFromStorage, registerDraftBackgroundAsset, resolveSplitRowLayout, getAuxBarConfig, getAuxBarKeys, setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows, pinPreviewContainerWidth };
+    window.testApi = { state, history, keyDialogState, beginHistoryTracking, commitHistorySnapshot, scheduleHistoryCommit, undo, redo, saveDraftNow, currentHistorySnapshot, restoreSnapshot, normalizeLayoutObject, applyMainFieldsToDraft, updateDraftFromMainFields, normalizeRowHeightKey, renderSvgPreviewHtml, resolvePreviewColorsForKey, resolveThemeTokenColor, argbToCss, buildAuxBarPreviewHtml, editorKeyLabel, restoreDraftFromStorage, registerDraftBackgroundAsset, resolveAuxBarPreviewGeometry, resolveSplitRowLayout, getAuxBarConfig, getAuxBarKeys, setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows, pinPreviewContainerWidth };
   `;
   const source = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
   assert.ok(source.includes('\n  main();'));
@@ -189,4 +189,99 @@ test('图片存储不可用、超限时报告明确失败而非伪装成功', as
   await new Promise(resolve => setImmediate(resolve));
   assert.match(r.element('draft-save-status').textContent, /未保存.*禁止存储/);
   URL.revokeObjectURL(url);
+});
+
+test('普通与分体共用辅助栏，编辑分体不写入变体辅助栏或改动高度', () => {
+  const r = loadApp();
+  r.state.layout = { rime: { default: layout('Q').default, wanxiang_t9: {
+    default: layout('A').default,
+    __meta__: { aux_bar: { position: 'left', size_percent: 15, keys: [[{ type: 'MacroKey', label: '，' }]] } },
+    '__variant__:split': { default: layout('S').default, __meta__: { keyboard_height_percent: 45 } }
+  }, other: { default: layout('B').default, __meta__: { aux_bar: { position: 'top', size_percent: 10 } } } } };
+  r.state.selectedBase = 'rime'; r.state.selectedSubmode = 'wanxiang_t9'; r.state.editingSplit = true;
+  assert.equal(r.getAuxBarConfig().position, 'left'); assert.equal(r.getAuxBarKeys()[0].label, '，');
+  r.setAuxBarConfig('rime', 'wanxiang_t9', { position: 'right', sizePercent: 20 });
+  r.setAuxBarKeys('rime', 'wanxiang_t9', [{ type: 'MacroKey', label: '。', rowHeightPercent: 70 }]);
+  const schema = r.state.layout.rime.wanxiang_t9;
+  assert.equal(schema.__meta__.aux_bar.position, 'right');
+  assert.equal(schema.__meta__.aux_bar.keys[0][0].rowHeightPercent, 70);
+  assert.equal(schema['__variant__:split'].__meta__.keyboard_height_percent, 45);
+  assert.equal(schema['__variant__:split'].__meta__.aux_bar, undefined);
+  assert.equal(r.getMetaContainer('rime', 'wanxiang_t9').keyboard_height_percent, 45);
+  r.state.editingSplit = false;
+  assert.equal(r.getAuxBarConfig().position, 'right'); assert.equal(r.getAuxBarKeys()[0].label, '。');
+  r.setAuxBarConfig('rime', 'wanxiang_t9', null); r.setAuxBarKeys('rime', 'wanxiang_t9', []);
+  assert.equal(schema.__meta__.aux_bar, undefined);
+  assert.equal(r.state.layout.rime.other.__meta__.aux_bar.position, 'top');
+});
+
+test('方案 ID 和显示名按原始磁盘键保留，仅有分体排列也可选择', () => {
+  const r = loadApp();
+  r.state.layout = { rime: { wanxiang_t9: { '__variant__:split': layout('ID').default },
+    '万象九键': layout('名称').default }, numeric: { '__variant__:split': layout('1').default } };
+  assert.deepEqual(new Set(r.submodeNames('rime')), new Set(['wanxiang_t9', '万象九键']));
+  assert.deepEqual(Array.from(r.submodeNames('numeric')), ['default']);
+  r.state.selectedBase = 'rime'; r.state.selectedSubmode = 'wanxiang_t9'; r.state.editingSplit = true;
+  assert.equal(r.getRows()[0][0].main, 'ID');
+  r.setAuxBarConfig('rime', 'wanxiang_t9', { position: 'left', sizePercent: 15 });
+  assert.equal(r.state.layout.rime.wanxiang_t9.__meta__.aux_bar.position, 'left');
+  assert.equal(r.state.layout.rime['万象九键'].__meta__, undefined);
+});
+
+test('分体侧栏和主键采用扣除中缝的同一宽度基准，包括桥接空格行', () => {
+  const r = loadApp();
+  const row = Array.from({ length: 6 }, () => ({ type: 'AlphabetKey', main: 'A' }));
+  for (const position of ['left', 'right']) {
+    for (const gap of [0.05, 0.2, 0.6]) {
+      const geometry = r.resolveAuxBarPreviewGeometry({ position, sizePercent: 15 }, true, gap);
+      assert.ok(Math.abs(geometry.sizePercent / 100 - 0.15 * (1 - gap)) < 1e-12);
+      const mainArea = 1 - geometry.sizePercent / 100;
+      const result = r.resolveSplitRowLayout(row, gap, true, geometry.keyAreaScale);
+      result.widths.forEach(width => assert.ok(Math.abs(mainArea * width - 0.85 * (1 - gap) / 6) < 1e-12));
+      const bridge = r.resolveSplitRowLayout([
+        { type: 'MacroKey', weight: 0.18 }, { type: 'MacroKey', weight: 0.18 }, { type: 'SpaceKey' },
+        { type: 'MacroKey', weight: 0.18 }, { type: 'ReturnKey', weight: 0.18 }
+      ], gap, true, geometry.keyAreaScale);
+      assert.ok(Math.abs(mainArea * bridge.widths[0] - 0.18 * 0.85 * (1 - gap)) < 1e-12);
+      assert.ok(Math.abs(bridge.widths.reduce((a, b) => a + b, 0) - 1) < 1e-12);
+    }
+  }
+  assert.equal(r.resolveAuxBarPreviewGeometry({ position: 'top', sizePercent: 15 }, true, 0.6).sizePercent, 15);
+  assert.equal(r.resolveAuxBarPreviewGeometry({ position: 'left', sizePercent: 15 }, false, 0.6).keyAreaScale, 1);
+});
+
+test('布局归一化往返保留方案键、分体排列与共用辅助栏', () => {
+  const r = loadApp();
+  const raw = { rime: { schema_id: { default: layout('Q').default,
+    '__variant__:split': layout('S').default,
+    __meta__: { aux_bar: { position: 'left', size_percent: 15,
+      keys: [[{ type: 'MacroKey', label: ',', rowHeightPercent: 70 }]] } }
+  } }, numeric: { default: layout('1').default, '__variant__:split': layout('2').default } };
+  const normalized = JSON.parse(JSON.stringify(r.normalizeLayoutObject(structuredClone(raw))));
+  assert.deepEqual(Object.keys(normalized), Object.keys(raw));
+  const walk = (original, result, at = '') => {
+    if (!original || typeof original !== 'object') return;
+    if (original['__variant__:split']) assert.deepEqual(result['__variant__:split'], original['__variant__:split'], at);
+    if (original.__meta__?.aux_bar) assert.deepEqual(result.__meta__.aux_bar, original.__meta__.aux_bar, at);
+    for (const [key, value] of Object.entries(original)) {
+      if (!Array.isArray(value)) walk(value, result[key], `${at}/${key}`);
+    }
+  };
+  walk(raw, normalized);
+});
+
+test('预览按完整画布固定宽度，辅助栏不能缩窄整个键盘；分体百分比位于共用父级', () => {
+  const r = loadApp();
+  const root = r.element('layout-preview');
+  root.style = { width: '', getPropertyValue: () => '576px' };
+  root.closest = () => ({ clientWidth: 800 });
+  root.querySelectorAll = () => { throw new Error('不应依赖内部主行宽度'); };
+  r.context.window.innerWidth = 1280;
+  r.context.getComputedStyle = () => ({ paddingLeft: '10px', paddingRight: '10px' });
+  r.pinPreviewContainerWidth(); assert.equal(root.style.width, '596px');
+  const config = { position: 'left', sizePercent: 15 };
+  const geometry = r.resolveAuxBarPreviewGeometry(config, true, 0.2);
+  const html = r.buildAuxBarPreviewHtml(config, [], '', r.state.themeAppSync, geometry);
+  assert.match(html, /class="aux-bar-hwrap" style="--aux-bar-size:12%"/);
+  r.context.window.innerWidth = 390; r.pinPreviewContainerWidth(); assert.equal(root.style.width, '');
 });
