@@ -888,7 +888,6 @@
     const isAlt = variant.includes("alt-key");
     const isAccent = variant.includes("accent-key");
     const isSpace = variant.includes("space-key");
-    const isCompose = variant.includes("compose-key");
     const isLayoutSwitch = key?.type === "LayoutSwitchKey" || key?.type === "LayerSwitchKey";
     const isReturn = key?.type === "ReturnKey";
     if (!borderEnabled) {
@@ -911,10 +910,9 @@
       const fallbackAltText = resolveThemeTokenColor("altKeyTextColor");
       const textColor = resolveKeyColorValue(key, "textColor", "textColorMonet", fallbackText);
       const altTextColor = resolveKeyColorValue(key, "altTextColor", "altTextColorMonet", fallbackAltText);
-      const composeHintColor = resolveThemeTokenColor("genericActiveBackgroundColor");
       return {
         backgroundCss: argbToCss(backgroundColor),
-        textCss: argbToCss(isCompose ? composeHintColor : (isReturn ? resolveThemeTokenColor("accentKeyTextColor") : textColor)),
+        textCss: argbToCss(isReturn ? resolveThemeTokenColor("accentKeyTextColor") : textColor),
         altTextCss: argbToCss(altTextColor),
         borderCss: argbToCss(backgroundColor)
       };
@@ -938,10 +936,9 @@
     const borderColor = borderEnabled
       ? resolveKeyColorValue(key, "shadowColor", "shadowColorMonet", resolveThemeTokenColor("keyShadowColor"))
       : backgroundColor;
-    const composeHintColor = resolveThemeTokenColor("genericActiveBackgroundColor");
     return {
       backgroundCss: argbToCss(backgroundColor),
-      textCss: argbToCss(isCompose ? composeHintColor : textColor),
+      textCss: argbToCss(textColor),
       altTextCss: argbToCss(altTextColor),
       borderCss: argbToCss(borderColor)
     };
@@ -3211,12 +3208,11 @@
     // （app 序列化同样只在 false 时写 "transparent": false，字段缺失即默认形态）
     if (type === "PlaceholderKey") {
       if (key.transparent !== false) delete key.transparent;
-      // splitAfter 是分体断点标记，占位键不承载内容，无意义
-      delete key.splitAfter;
     } else {
       delete key.transparent;
-      if (key.splitAfter !== true) delete key.splitAfter;
     }
+    // 分体断点属于布局属性，App 同样允许把它放在占位键上。
+    if (key.splitAfter !== true) delete key.splitAfter;
 
     const availableColorKeys = new Set();
     availableColorFieldsForType(type).forEach((field) => {
@@ -3433,6 +3429,7 @@
 
   function editorKeyLabel(key) {
     if (!key || typeof key !== "object") return "?";
+    if (key.type === "PlaceholderKey") return key.main || key.alt || "·";
     if (typeof key.type === "string") {
       switch (key.type) {
         case "CapsKey": return "Caps";
@@ -3841,10 +3838,12 @@
         let hint = "";
         if (state.previewShowHints !== false) hint = keySwipeHintHtml(key);
         let badges = "";
-        if (key.longPress) badges += `<span class="key-badge key-badge-lp" title="长按事件"></span>`;
-        if (key.tap) badges += `<span class="key-badge key-badge-macro" title="含宏动作"></span>`;
-        if (key.swipeUp || key.swipeDown) badges += `<span class="key-badge key-badge-swipe" title="含上下划动"></span>`;
-        else if (key.swipe) badges += `<span class="key-badge key-badge-swipe-legacy" title="含划动（旧单槽）"></span>`;
+        if (state.previewShowHints !== false) {
+          if (key.longPress) badges += `<span class="key-badge key-badge-lp" title="长按事件"></span>`;
+          if (key.tap) badges += `<span class="key-badge key-badge-macro" title="含点击宏"></span>`;
+          if (key.swipeUp || key.swipeDown) badges += `<span class="key-badge key-badge-swipe" title="含上下划动"></span>`;
+          else if (key.swipe) badges += `<span class="key-badge key-badge-swipe-legacy" title="含划动（旧单槽）"></span>`;
+        }
         const originalIndex = typeof key.__dupOf === "number" ? key.__dupOf : keyIndex;
         const previewEditTitle = `${keyTypeLabel(key.type)}。点击按键可直接编辑`;
         // PlaceholderKey 始终只承担布局占位，不在预览中绘制成独立按键；
@@ -3879,12 +3878,13 @@
 
   function buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg) {
     if (!auxBarConfig) return rowsHtml;
+    const verticalHeights = resolveRowHeightPercents(auxBarKeys.map((key) => [key]));
     const borderWidth = cfg.borderEnabled ? (cfg.borderOutline ? 1 : 0) : 0;
     const keyStyleOf = (key) => {
       const colors = resolvePreviewColorsForKey(key);
       return `--preview-key-bg:${colors.backgroundCss};color:${colors.textCss};border-color:${colors.borderCss};--preview-key-shadow:${colors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
     };
-    const chipOf = (key, auxIndex) => `<div class="layout-key-slot" style="--key-width:0%"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyleOf(key))}" data-preview-aux-key="${auxIndex}" tabindex="0" role="button" title="${escapeAttr(`${keyTypeLabel(key.type)}。点击按键可直接编辑`)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(key)}</span></div></div>`;
+    const chipOf = (key, auxIndex) => `<div class="layout-key-slot" style="--key-width:0%;--aux-key-flex:${verticalHeights[auxIndex] || 0}"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyleOf(key))}" data-preview-aux-key="${auxIndex}" tabindex="0" role="button" title="${escapeAttr(`${keyTypeLabel(key.type)}。点击按键可直接编辑`)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(key)}</span></div></div>`;
     const auxKeysHtml = auxBarKeys.length
       ? `<div class="keys aux-bar-keys">${auxBarKeys.map(chipOf).join("")}</div>`
       : `<div class="aux-bar-placeholder">辅助选择栏（无按键，运行时显示候选标签页）</div>`;
@@ -4458,6 +4458,7 @@
     keys.splice(auxBarKeyIndex, 1);
     setAuxBarKeys(state.selectedBase, state.selectedSubmode, keys);
     syncLayoutUiFromState();
+    renderAuxBarKeyChips();
   }
 
   function bindRowDrag(node) {
@@ -5188,7 +5189,8 @@
     document.querySelectorAll(".key-basic-sublabel").forEach((node) => { node.hidden = !c.hasEditableSubLabel; });
     document.querySelectorAll(".key-basic-numpad-sym").forEach((node) => { node.hidden = !c.hasNumpadSym; });
     document.querySelectorAll(".key-basic-switch-target").forEach((node) => { node.hidden = !c.hasSwitchTarget; });
-    document.querySelectorAll(".key-basic-weight, .key-basic-row-height").forEach((node) => { node.hidden = inComposeEdit || inAuxBarEdit; });
+    document.querySelectorAll(".key-basic-weight").forEach((node) => { node.hidden = inComposeEdit || inAuxBarEdit; });
+    document.querySelectorAll(".key-basic-row-height").forEach((node) => { node.hidden = inComposeEdit; });
     const mainInput = el("layout-key-main");
     const altInput = el("layout-key-alt");
     const labelInput = el("layout-key-label");
@@ -5200,9 +5202,9 @@
     if (labelInput) labelInput.disabled = !c.hasLabel;
     if (subLabelInput) subLabelInput.disabled = !c.hasEditableSubLabel;
     if (weightInput) weightInput.disabled = inComposeEdit || inAuxBarEdit;
-    if (rowHeightInput) rowHeightInput.disabled = inComposeEdit || inAuxBarEdit;
+    if (rowHeightInput) rowHeightInput.disabled = inComposeEdit;
     const splitAfterRow = el("layout-key-split-after-row");
-    if (splitAfterRow) splitAfterRow.hidden = type === "PlaceholderKey";
+    if (splitAfterRow) splitAfterRow.hidden = inComposeEdit || inAuxBarEdit;
     const transparentRow = el("layout-key-transparent-row");
     if (transparentRow) transparentRow.hidden = type !== "PlaceholderKey";
     const displayBtn = el("layout-key-open-display-text");
@@ -5251,7 +5253,6 @@
     }
     if (inAuxBarEdit && keyDialogState.draft) {
       delete keyDialogState.draft.weight;
-      delete keyDialogState.draft.rowHeightPercent;
     }
     // 宏事件子按钮（点击/划动/长按的编辑与清空）的禁用态必须随类型即时同步：
     // 此前只在 openMacroDialog 打开时刷新，类型切换后残留上一次的禁用状态
@@ -5342,15 +5343,21 @@
     if (!keyDialogState.draft) keyDialogState.draft = {};
     applyMainFieldsToDraft(keyDialogState.draft);
     if (keyDialogState.auxBarMode === true && keyDialogState.rowIndex === -1 && !state.composeNestedContext) {
-      // 辅助栏按键与 App 一致：不参与行内权重/行高设置
+      // 辅助栏不使用行内宽度权重；纵向辅助栏仍使用按键高度比例。
       delete keyDialogState.draft.weight;
-      delete keyDialogState.draft.rowHeightPercent;
     }
     refreshKeyDialogSummaries();
   }
 
   function applyMainFieldsToDraft(key) {
     const type = el("layout-key-type").value.trim();
+    // 切换到空白占位键时清空普通键的文字，缺省就是透明的纯占位。
+    // 已有占位键再次打开时保留其装饰文字、颜色和透明设置。
+    if (type === "PlaceholderKey" && key.type !== type) {
+      el("layout-key-main").value = "";
+      el("layout-key-alt").value = "";
+      el("layout-key-transparent").checked = true;
+    }
     const c = keyTypeCapabilities(type || "AlphabetKey");
     const main = el("layout-key-main").value;
     const alt = el("layout-key-alt").value;
@@ -10796,6 +10803,9 @@
       let showHints = true;
       try { showHints = localStorage.getItem(PREVIEW_HINTS_KEY) !== "0"; } catch (_) {}
       hints.checked = showHints;
+      state.previewShowHints = showHints;
+      const legend = el("preview-hint-legend");
+      if (legend) legend.hidden = !showHints;
     }
     const gboard = el("pt-gboard-style");
     if (gboard) gboard.checked = !!state.themeAppSync.gboardStyle;
@@ -10847,7 +10857,10 @@
       renderLayoutPreview();
     });
     el("pt-hints")?.addEventListener("change", (e) => {
+      state.previewShowHints = !!e.target.checked;
       try { localStorage.setItem(PREVIEW_HINTS_KEY, e.target.checked ? "1" : "0"); } catch (_) {}
+      const legend = el("preview-hint-legend");
+      if (legend) legend.hidden = !state.previewShowHints;
       renderLayoutPreview();
     });
     el("pt-split")?.addEventListener("change", (e) => {

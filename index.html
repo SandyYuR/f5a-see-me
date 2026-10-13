@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>fcitx5-android see me - Fcitx5 Android 可视化编辑器</title>
-  <link rel="stylesheet" href="./style.css?v=20261008097000">
+  <link rel="stylesheet" href="./style.css?v=20261013040000">
 </head>
 <body>
   <header class="topbar">
@@ -37,12 +37,19 @@
         <span class="preview-toolbar-sep" aria-hidden="true"></span>
         <label><input type="checkbox" id="pt-border"> 按键边框</label>
         <label><input type="checkbox" id="pt-stroke"> 边框描边</label>
-        <label><input type="checkbox" id="pt-hints"> 滑动提示</label>
+        <label><input type="checkbox" id="pt-hints"> 显示提示</label>
         <label><input type="checkbox" id="pt-split"> 分体键盘</label>
         <label><input type="checkbox" id="pt-gboard-style"> Gboard 风格按钮</label>
         <span class="preview-toolbar-sep" aria-hidden="true"></span>
         <label id="pt-split-gap-cell" title="预览分体键盘时的中缝宽度（app：split_keyboard_gap_percent）"><input type="checkbox" id="pt-align-halves" checked> 中缝对齐</label>
         <span class="pt-cell"><label for="pt-split-gap">中缝</label><input id="pt-split-gap" class="num-input" type="number" min="5" max="60" step="1"><span class="pt-unit">%</span></span>
+      </div>
+      <div id="preview-hint-legend" class="preview-hint-legend" aria-label="按键提示图例">
+        <span><i class="legend-dot key-badge-lp" aria-hidden="true"></i>长按动作</span>
+        <span><i class="legend-dot key-badge-macro" aria-hidden="true"></i>点击宏</span>
+        <span><i class="legend-dot key-badge-swipe" aria-hidden="true"></i>上下划动</span>
+        <span><i class="legend-dot key-badge-swipe-legacy" aria-hidden="true"></i>旧版划动</span>
+        <span>仅用于编辑提示</span>
       </div>
       <div class="preview-shell">
         <div id="theme-preview-extra-left" class="theme-preview-extra-side"></div>

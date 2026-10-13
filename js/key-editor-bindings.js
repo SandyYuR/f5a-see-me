@@ -7,6 +7,7 @@
       setStatus,
       keyDialogState,
       deleteKey,
+      deleteAuxBarKey,
       updateDraftFromMainFields,
       updateKeyDialogFieldVisibility,
       saveLayoutKeyDialog,

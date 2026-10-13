@@ -1328,11 +1328,12 @@ input[type="checkbox"] {
 }
 
 .aux-bar-vwrap .aux-bar-preview .keys .layout-key-slot {
-  flex: 1 1 0;
+  flex: var(--aux-key-flex, 1) 1 0;
+  min-height: 0;
 }
 
 .aux-bar-vwrap .aux-bar-preview .layout-key-slot .layout-key {
-  height: 100%;
+  height: calc(100% - var(--preview-key-vgap, 0px) * 2);
 }
 
 /* ===== 辅助选择栏设置对话框 ===== */
@@ -2451,6 +2452,19 @@ html.site-light .popup-entry-delete {
   border-radius: 50%;
   pointer-events: none;
 }
+
+.preview-hint-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  color: var(--sub);
+  font-size: 12px;
+  padding: 4px 12px 8px;
+}
+
+.preview-hint-legend[hidden] { display: none; }
+.preview-hint-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
 
 .key-badge-lp {
   right: 5px;
