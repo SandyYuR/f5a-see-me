@@ -31,7 +31,7 @@ function loadApp() {
     syncLayoutUiFromState = renderThemeList = renderThemeEditor = syncThemeJsonFromState = () => {};
     renderPopupEditor = syncPopupJsonFromState = renderIconThemeEditor = syncIconThemeJsonFromState = () => {};
     syncPreviewToolbarUi = syncThemeAppSyncUiFromState = refreshKeyDialogSummaries = () => {};
-    window.testApi = { state, history, keyDialogState, beginHistoryTracking, undo, redo, saveDraftNow, currentHistorySnapshot, restoreSnapshot, normalizeLayoutObject, applyMainFieldsToDraft, updateDraftFromMainFields, normalizeRowHeightKey, resolvePreviewColorsForKey, resolveThemeTokenColor, argbToCss, buildAuxBarPreviewHtml, editorKeyLabel, restoreDraftFromStorage, resolveSplitRowLayout, getAuxBarConfig, getAuxBarKeys, setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows, pinPreviewContainerWidth };
+    window.testApi = { state, history, keyDialogState, beginHistoryTracking, undo, redo, saveDraftNow, currentHistorySnapshot, restoreSnapshot, normalizeLayoutObject, applyMainFieldsToDraft, updateDraftFromMainFields, normalizeRowHeightKey, renderSvgPreviewHtml, resolvePreviewColorsForKey, resolveThemeTokenColor, argbToCss, buildAuxBarPreviewHtml, editorKeyLabel, restoreDraftFromStorage, resolveSplitRowLayout, getAuxBarConfig, getAuxBarKeys, setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows, pinPreviewContainerWidth };
   `;
   const source = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
   assert.ok(source.includes('\n  main();'));
@@ -79,6 +79,30 @@ test('辅助栏删除按钮使用注入的删除函数', () => {
     { get: (target, key) => target[key] || (() => {}) });
   r.context.window.bindKeyEditorDialogEvents(deps);
   r.element('layout-key-delete').handlers.click(); assert.equal(deleted, 2);
+});
+
+test('外部 SVG 只进入 img 的 data URL，原文不插入页面 DOM', () => {
+  const r = loadApp();
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" onclick="alert(1)"><foreignObject><script>alert(2)</script></foreignObject></svg>';
+  const html = r.renderSvgPreviewHtml(svg);
+  assert.match(html, /^<img /); assert.doesNotMatch(html, /<svg|<script|<foreignObject|onclick=/);
+  const encoded = html.match(/src="data:image\/svg\+xml;charset=utf-8,([^"]+)"/)[1];
+  assert.match(decodeURIComponent(encoded), /color="#e8ebf2"/);
+  const original = html.match(/data-svg-source="([^"]+)"/)[1];
+  assert.equal(decodeURIComponent(original), svg);
+});
+
+test('独立 SVG 预览兼容简写命名空间和亮暗文字颜色，保留显式颜色', () => {
+  const r = loadApp();
+  r.context.getComputedStyle = () => ({ getPropertyValue: () => '#123456' });
+  const raw = '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M0 0h24v24z"/></svg>';
+  const html = r.renderSvgPreviewHtml(raw);
+  const preview = decodeURIComponent(html.match(/src="data:image\/svg\+xml;charset=utf-8,([^"]+)"/)[1]);
+  assert.match(preview, /xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+  assert.match(preview, /color="#123456"/);
+  assert.equal(decodeURIComponent(html.match(/data-svg-source="([^"]+)"/)[1]), raw);
+  const colored = r.renderSvgPreviewHtml('<svg xmlns="http://www.w3.org/2000/svg" color="red"/>');
+  assert.equal(decodeURIComponent(colored.match(/src="data:image\/svg\+xml;charset=utf-8,([^"]+)"/)[1]), '<svg xmlns="http://www.w3.org/2000/svg" color="red"/>');
 });
 
 test('合成态覆盖不改变普通预览主文字的主题颜色', () => {

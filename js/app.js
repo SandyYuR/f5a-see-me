@@ -20,6 +20,9 @@
     const effective = effectiveSiteMode(mode);
     root.classList.toggle("site-mode-light", effective === "light");
     root.classList.toggle("site-mode-dark", effective === "dark");
+    document.querySelectorAll("img.icon-svg-preview").forEach((img) => {
+      img.src = svgPreviewDataUrl(decodeURIComponent(img.dataset.svgSource));
+    });
   }
   if (SITE_MODE_MEDIA) {
     const onSystemModeChange = () => {
@@ -9657,28 +9660,35 @@
       return `<span style="font-size:10px;color:var(--ok);" data-slot="${escapeAttr(slot)}" class="icon-file-placeholder">PNG</span>`;
     }
     if (isInlineSvgValue(value)) {
-      return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;" title="SVG icon">${sanitizeSvgForPreview(value)}</div>`;
+      return renderSvgPreviewHtml(value);
     }
     if (isInlineXmlDrawableValue(value)) {
       const svg = vectorDrawableToSvg(value);
-      if (svg) return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden;" title="Vector drawable">${svg}</div>`;
+      if (svg) return renderSvgPreviewHtml(svg);
       return `<span style="font-size:10px;color:var(--primary);">XML</span>`;
     }
     return `<span style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(value.substring(0, 4))}</span>`;
   }
 
-  function sanitizeSvgForPreview(svg) {
-    const clean = svg.trim()
-      .replace(/^\uFEFF/, "")
-      .replace(/^<\?xml[^>]*\?>\s*/i, "")
-      .replace(/^<!DOCTYPE[^>]*>\s*/i, "")
-      .replace(/^<!--[\s\S]*?-->\s*/, "");
-    // Strip script elements and event handlers; SVG can be inserted directly into innerHTML
-    return clean
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
-      .replace(/<script\b[^>]*\/>/gi, "")
-      .replace(/\bon\w+\s*=\s*"[^"]*"/gi, "")
-      .replace(/\bon\w+\s*=\s*'[^']*'/gi, "");
+  function renderSvgPreviewHtml(svg) {
+    // SVG 只作为图片加载：脚本、事件、foreignObject 都不能访问编辑器 DOM。
+    // 不用正则「净化」后内联；原始文本仍保留在主题中供编辑与导出。
+    const source = encodeURIComponent(String(svg).trim());
+    return `<img class="icon-svg-preview" data-svg-source="${escapeAttr(source)}" src="${escapeAttr(svgPreviewDataUrl(svg))}" alt="SVG 图标" style="width:100%;height:100%;object-fit:contain;">`;
+  }
+
+  function svgPreviewDataUrl(svg) {
+    // 简写 SVG 原来由 HTML 补上命名空间、继承文字颜色；独立图片需显式提供。
+    // 这里只补显示属性，安全隔离仍由 img 的图片加载上下文保证。
+    const color = typeof getComputedStyle === "function"
+      ? getComputedStyle(document.body).getPropertyValue("--text").trim() : "#e8ebf2";
+    const preview = String(svg).trim().replace(/<svg\b(?:"[^"]*"|'[^']*'|[^'">])*>/i, (tag) => {
+      let attrs = "";
+      if (!/\sxmlns\s*=/.test(tag)) attrs += ` xmlns="http://www.w3.org/2000/svg"`;
+      if (!/\scolor\s*=/.test(tag)) attrs += ` color="${escapeAttr(color || "#e8ebf2")}"`;
+      return tag.replace(/\s*\/?>$/, (end) => `${attrs}${end}`);
+    });
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(preview)}`;
   }
 
   function buildIconThemeThumbnailHtml(icons) {
@@ -9688,7 +9698,7 @@
     if (!chosen.length) return `<span style="color:var(--sub);font-size:11px;">无图标</span>`;
     return chosen.map((slot) => {
       const v = icons[slot];
-      if (isInlineSvgValue(v)) return `<div class="icon-theme-card-preview-cell" title="${escapeAttr(slot)}">${sanitizeSvgForPreview(v)}</div>`;
+      if (isInlineSvgValue(v)) return `<div class="icon-theme-card-preview-cell" title="${escapeAttr(slot)}">${renderSvgPreviewHtml(v)}</div>`;
       if (isFileIconRef(v) || isLocalIconRef(v)) return `<div class="icon-theme-card-preview-cell" title="${escapeAttr(slot)}"><span style="color:var(--ok);font-size:11px;">PNG</span></div>`;
       return `<div class="icon-theme-card-preview-cell" title="${escapeAttr(slot)}"><span style="color:var(--primary);font-size:11px;">✦</span></div>`;
     }).join("");
@@ -9922,7 +9932,7 @@
       } else if (url && !url.startsWith("svg:")) {
         customPreview.innerHTML = `<img src="${escapeAttr(url)}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;">`;
       } else if (url && url.startsWith("svg:")) {
-        customPreview.innerHTML = sanitizeSvgForPreview(url.slice(4));
+        customPreview.innerHTML = renderSvgPreviewHtml(url.slice(4));
       } else {
         customPreview.innerHTML = renderIconThemeSlotPreviewHtml(slot, currentValue, theme.name);
       }
