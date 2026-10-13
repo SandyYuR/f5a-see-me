@@ -984,7 +984,8 @@
     const root = el("layout-preview");
     if (!root) return;
     const theme = currentThemeEntry();
-    const sourceUrl = theme?.backgroundImage || resolveThemeAssetUrl(theme?.backgroundImageObject);
+    const textEditor = state.selectedBase === TEXT_EDITOR_LAYOUT_NAME;
+    const sourceUrl = textEditor ? "" : theme?.backgroundImage || resolveThemeAssetUrl(theme?.backgroundImageObject);
     if (sourceUrl && !state.themeImageMetaByUrl.has(sourceUrl)) {
       loadImageForCanvas(sourceUrl).then(() => {
         if (currentThemeEntry()?.id === theme?.id) {
@@ -993,7 +994,7 @@
         }
       }).catch(() => {});
     }
-    root.style.backgroundColor = resolvePreviewSurfaceColor();
+    root.style.backgroundColor = textEditor ? argbToCss(resolveThemeTokenColor("keyboardColor")) : resolvePreviewSurfaceColor();
     if (sourceUrl) {
       root.style.backgroundImage = `url("${sourceUrl}")`;
       root.style.backgroundSize = "cover";
@@ -2850,6 +2851,7 @@
   }
 
   function submodeNames(base, layout = state.layout) {
+    if (base === TEXT_EDITOR_LAYOUT_NAME) return [DEFAULT_SUBMODE];
     const v = layout[base];
     if (isRows(v)) return [DEFAULT_SUBMODE];
     if (!v || typeof v !== "object" || Array.isArray(v)) return [];
@@ -2990,6 +2992,7 @@
   }
 
   function getRows(base = state.selectedBase, submode = state.selectedSubmode) {
+    if (base === TEXT_EDITOR_LAYOUT_NAME) return getRowsDockedRows(base, DEFAULT_SUBMODE);
     // 分体编辑态：读写当前条目的 __variant__:split 行（回退链 Split → [Split, Docked]）
     if (state.editingSplit) {
       const variantRows = getVariantRows(base, submode);
@@ -3007,7 +3010,8 @@
   }
 
   function setRows(base, submode, rows) {
-    if (state.editingSplit) {
+    if (base === TEXT_EDITOR_LAYOUT_NAME) submode = DEFAULT_SUBMODE;
+    if (state.editingSplit && base !== TEXT_EDITOR_LAYOUT_NAME) {
       setVariantRows(base, submode, rows);
       return;
     }
@@ -3446,9 +3450,11 @@
   function syncSplitModeCheckbox() {
     const box = el("layout-split-mode");
     if (!box) return;
-    box.checked = !!state.editingSplit;
+    const textEditor = state.selectedBase === TEXT_EDITOR_LAYOUT_NAME;
+    box.checked = !textEditor && !!state.editingSplit;
+    box.disabled = textEditor;
     const addBtn = el("layout-add-layout");
-    if (addBtn) addBtn.disabled = !!state.editingSplit;
+    if (addBtn) addBtn.disabled = !textEditor && !!state.editingSplit;
   }
 
   function ensureSelection() {
@@ -3605,7 +3611,7 @@
       .map((k) => `<option value="${escapeAttr(k)}">${escapeHtml(k)}</option>`)
       .join("");
     subSelect.value = state.selectedSubmode;
-    subSelect.disabled = false;
+    subSelect.disabled = state.selectedBase === TEXT_EDITOR_LAYOUT_NAME;
 
     const entries = allEntryKeys();
     const copySourceNode = el("layout-copy-source");
@@ -3858,8 +3864,101 @@
     return { sizePercent: scaledFraction * 100, keyAreaScale: (1 - sizeFraction) / (1 - scaledFraction) };
   }
 
+  function resolveTextEditorPreviewRows(rows) {
+    const configured = rows.map((row, rowIndex) => row.map((key, keyIndex) => ({ key, rowIndex, keyIndex }))
+      .filter(({ key }) => key && typeof key === "object" && !Array.isArray(key)
+        && (key.type !== "MacroKey" || key.tap))
+      .map((item) => keyTypes.includes(item.key.type) && item.key.type !== "LayerSwitchKey"
+        ? item : { ...item, key: { type: "SpaceKey" } })).filter((row) => row.length);
+    if (configured.length) return { rows: configured, fallback: false };
+    const actionKey = (label, action) => ({ type: "MacroKey", label, tap: { macro: [{ type: "edit", action }] } });
+    return { fallback: true, rows: [[
+      actionKey("ABC", "back"), actionKey("全选", "selectAll"),
+      actionKey("剪切", "cut"), actionKey("复制", "copy"), actionKey("粘贴", "paste"), { type: "BackspaceKey" }
+    ].map((key) => ({ key }))] };
+  }
+
+  function resolveTextEditorPreviewGeometry(width, metrics = state.themeAppSync.previewMetrics) {
+    const screenWidth = Number(metrics?.screenWidthPx);
+    const keyboardHeight = Number(metrics?.keyboardHeightPx);
+    const measured = Number.isFinite(screenWidth) && screenWidth > 0 && Number.isFinite(keyboardHeight) && keyboardHeight > 0;
+    const logicalWidth = measured ? screenWidth / Math.max(0.1, Number(metrics.density) || 1) : 360;
+    const dpScale = width / logicalWidth;
+    const height = measured
+      ? width * keyboardHeight / screenWidth
+      : width * (20 / 9) * 0.3;
+    return { dpScale, height: Math.max(120 * dpScale, height), bottomHeight: 46 * dpScale };
+  }
+
+  function textEditorPreviewButtonColors(key, borderEnabled) {
+    // FoxyTextEditingUi 使用主题按钮；KeyDef 的逐键配色和合成覆盖不作用于这个容器。
+    const alt = keyVariantClass(key).includes("alt-key") || key.type === "MiniSpaceKey";
+    return {
+      backgroundCss: borderEnabled ? argbToCss(resolveThemeTokenColor(alt ? "altKeyBackgroundColor" : "keyBackgroundColor")) : "transparent",
+      textCss: argbToCss(resolveThemeTokenColor(PREVIEW_SPECIAL_KEY_ICONS[key.type] || alt ? "altKeyTextColor" : "keyTextColor")),
+      borderCss: argbToCss(resolveThemeTokenColor("dividerColor")),
+      shadowCss: argbToCss(resolveThemeTokenColor("keyShadowColor"))
+    };
+  }
+
+  function textEditorPreviewKeyFaceHtml(key) {
+    if (key.type === "LanguageKey" || key.type === "MiniSpaceKey") {
+      return getDefaultSlotPreviewHtml(key.type === "LanguageKey" ? "keys.language" : "keys.space");
+    }
+    if (key.type === "SpaceKey") return "";
+    if (key.type === "PlaceholderKey") return escapeHtml(key.main || "");
+    if (key.type === "MacroKey" && !key.displayText) return escapeHtml(key.label || "");
+    if (key.type === "AlphabetKey" && !key.displayText) return escapeHtml(key.main || "");
+    return previewKeyFaceHtml(key);
+  }
+
+  function buildTextEditorPreviewHtml(rows, geometry, borderEnabled) {
+    const data = resolveTextEditorPreviewRows(rows);
+    const scale = geometry.dpScale;
+    const alphaText = (alpha) => argbToCss(((resolveThemeTokenColor("keyTextColor") & 0x00ffffff) | (alpha << 24)) >>> 0);
+    const padColor = argbToCss((resolveThemeTokenColor("keyBackgroundColor") | 0xff000000) >>> 0);
+    const rowHeight = geometry.bottomHeight / data.rows.length;
+    const bottom = data.rows.map((row) => {
+      // App 的 percentWidth 在这里作为 LinearLayout 权重，最小 0.5，而非普通键盘的百分比。
+      const weights = row.map(({ key }) => Number.isFinite(Number(key.weight)) ? Math.max(0.5, Number(key.weight)) : 0.5);
+      const total = weights.reduce((sum, weight) => sum + weight, 0);
+      return `<div class="text-editor-key-row" style="height:${rowHeight}px">${row.map(({ key, rowIndex, keyIndex }, index) => {
+        const colors = textEditorPreviewButtonColors(key, borderEnabled);
+        const attr = data.fallback ? ' aria-disabled="true"' : ` data-preview-row="${rowIndex}" data-preview-key="${keyIndex}"`;
+        const face = textEditorPreviewKeyFaceHtml(key);
+        const inset = borderEnabled ? 4 * scale : 0;
+        return `<div class="text-editor-key-slot" style="width:${weights[index] / total * 100}%;padding:${inset}px"><div class="layout-key text-editor-key"${attr} role="button" tabindex="${data.fallback ? -1 : 0}" title="${escapeAttr(data.fallback ? "App 默认编辑按钮（仅预览）" : `${keyTypeLabel(key.type)}。点击编辑`)}" style="--preview-key-bg:${colors.backgroundCss};color:${colors.textCss};border-color:${colors.borderCss};border-width:${borderEnabled ? 0 : Math.max(1, scale / 2)}px;border-radius:${12 * scale}px;box-shadow:${borderEnabled ? `0 ${scale}px 0 ${colors.shadowCss}` : "none"};font-size:${14 * scale}px;opacity:${data.fallback && index === 2 ? 0.45 : 1}"><span class="text-editor-key-label">${face}</span></div></div>`;
+      }).join("")}</div>`;
+    }).join("");
+    return `<div class="text-editor-preview-frame" style="height:${geometry.height}px;--text-editor-icon-size:${24 * scale}px"><div class="text-editor-pad-area" role="img" aria-label="文本编辑光标触控区：滑动可移动光标；长按后滑动可选择文字"><div class="text-editor-pad" style="margin:${8 * scale}px;border-radius:${6 * scale}px;background:${padColor}"><svg class="text-editor-pad-prompts" aria-hidden="true"><text x="50%" y="50%" dy="${-6 * scale}" fill="${alphaText(165)}" font-size="${15 * scale}">滑动可移动光标</text><text x="50%" y="50%" dy="${18 * scale}" fill="${alphaText(110)}" font-size="${12 * scale}">长按后滑动可选择文字</text></svg></div></div><div class="text-editor-bottom" style="height:${geometry.bottomHeight}px">${bottom}</div></div>`;
+  }
+
+  function renderTextEditorPreview(root) {
+    const metrics = resolvePreviewMetrics(false);
+    const width = resolvePreviewKeyboardWidth(root, metrics, false);
+    const rows = getRowsDockedRows(TEXT_EDITOR_LAYOUT_NAME, DEFAULT_SUBMODE);
+    const geometry = resolveTextEditorPreviewGeometry(width);
+    const fallback = resolveTextEditorPreviewRows(rows).fallback;
+    applyPreviewThemeSurface();
+    root.style.setProperty("--preview-keyboard-max-width", `${width}px`);
+    root.style.setProperty("--preview-top-bar-height", "0px");
+    root.style.setProperty("--preview-bottom-padding", "0px");
+    root.innerHTML = buildTextEditorPreviewHtml(rows, geometry, !!state.themeAppSync.borderEnabled);
+    requestAnimationFrame(pinPreviewContainerWidth);
+    setStatus("layout-preview-meta", `text_editor：光标触控板 + 底部编辑栏${fallback ? "（空布局，预览 App 默认按钮）" : ""}`, "");
+    renderThemeSupplementPreview();
+    updateFixedChromeMetrics();
+  }
+
   function renderLayoutPreview() {
     scheduleHistoryCommit();
+    const root = el("layout-preview");
+    const textEditor = state.selectedBase === TEXT_EDITOR_LAYOUT_NAME;
+    root.style.width = "";
+    root.classList.toggle("layout-preview-text-editor", textEditor);
+    root.classList.toggle("layout-preview-split", !textEditor && !!state.previewSplit);
+    syncPreviewToolbarUi();
+    if (textEditor) { renderTextEditorPreview(root); return; }
     const previewSplit = !!state.previewSplit;
     const rows = previewSplit && !state.editingSplit
       ? (getVariantRows(state.selectedBase, state.selectedSubmode)
@@ -3868,9 +3967,6 @@
     const rowPercents = resolveRowHeightPercents(rows);
     const auxBarConfig = getAuxBarConfig();
     const auxBarKeys = getAuxBarKeys();
-    const root = el("layout-preview");
-    root.classList.toggle("layout-preview-split", previewSplit);
-    root.style.width = "";
     const cfg = state.themeAppSync;
     const keyVGap = Math.max(0, Number(cfg.keyVGap) || 0);
     const punctPos = cfg.punctPos || 'bottom';
@@ -10933,6 +11029,11 @@
   }
 
   function syncPreviewToolbarUi() {
+    const textEditor = state.selectedBase === TEXT_EDITOR_LAYOUT_NAME;
+    ["pt-height", "pt-corner", "pt-gap-h", "pt-gap-v", "pt-gboard-style", "pt-hints"].forEach((id) => {
+      const input = el(id);
+      if (input) input.disabled = textEditor;
+    });
     const height = el("pt-height");
     if (height) height.value = getHeightOverride();
     const corner = el("pt-corner");
@@ -10946,7 +11047,7 @@
     const stroke = el("pt-stroke");
     if (stroke) {
       stroke.checked = !!state.themeAppSync.borderOutline;
-      stroke.disabled = !state.themeAppSync.borderEnabled;
+      stroke.disabled = textEditor || !state.themeAppSync.borderEnabled;
     }
     const hints = el("pt-hints");
     if (hints) {
@@ -10955,16 +11056,16 @@
       hints.checked = showHints;
       state.previewShowHints = showHints;
       const legend = el("preview-hint-legend");
-      if (legend) legend.hidden = !showHints;
+      if (legend) legend.hidden = textEditor || !showHints;
     }
     const gboard = el("pt-gboard-style");
     if (gboard) gboard.checked = !!state.themeAppSync.gboardStyle;
     const previewSplit = el("pt-split");
-    if (previewSplit) previewSplit.checked = !!state.previewSplit;
+    if (previewSplit) { previewSplit.checked = !textEditor && !!state.previewSplit; previewSplit.disabled = textEditor; }
     const composing = el("pt-composing");
-    if (composing) composing.checked = !!state.previewComposing;
+    if (composing) { composing.checked = !textEditor && !!state.previewComposing; composing.disabled = textEditor; }
     const splitGap = el("pt-split-gap");
-    const splitControlsEnabled = !!state.previewSplit;
+    const splitControlsEnabled = !textEditor && !!state.previewSplit;
     if (splitGap) {
       splitGap.value = Math.round(Number(state.themeAppSync.splitGapPercent) || 20);
       splitGap.disabled = !splitControlsEnabled;

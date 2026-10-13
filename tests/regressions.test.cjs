@@ -31,7 +31,15 @@ function loadApp() {
     syncLayoutUiFromState = renderThemeList = renderThemeEditor = syncThemeJsonFromState = () => {};
     renderPopupEditor = syncPopupJsonFromState = renderIconThemeEditor = syncIconThemeJsonFromState = () => {};
     syncPreviewToolbarUi = syncThemeAppSyncUiFromState = refreshKeyDialogSummaries = () => {};
-    window.testApi = { state, history, keyDialogState, beginHistoryTracking, commitHistorySnapshot, scheduleHistoryCommit, undo, redo, saveDraftNow, currentHistorySnapshot, restoreSnapshot, normalizeLayoutObject, applyMainFieldsToDraft, updateDraftFromMainFields, normalizeRowHeightKey, renderSvgPreviewHtml, resolvePreviewColorsForKey, resolveThemeTokenColor, argbToCss, buildAuxBarPreviewHtml, editorKeyLabel, restoreDraftFromStorage, registerDraftBackgroundAsset, resolvePreviewKey, resolveAuxBarPreviewGeometry, resolveSplitRowLayout, getAuxBarConfig, getAuxBarKeys, setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows, pinPreviewContainerWidth };
+    window.testApi = { state, history, keyDialogState, beginHistoryTracking, commitHistorySnapshot,
+      scheduleHistoryCommit, undo, redo, saveDraftNow, currentHistorySnapshot, restoreSnapshot,
+      normalizeLayoutObject, applyMainFieldsToDraft, updateDraftFromMainFields, normalizeRowHeightKey,
+      renderSvgPreviewHtml, resolvePreviewColorsForKey, resolveThemeTokenColor, argbToCss,
+      buildAuxBarPreviewHtml, editorKeyLabel, restoreDraftFromStorage, registerDraftBackgroundAsset,
+      resolvePreviewKey, resolveAuxBarPreviewGeometry, resolveSplitRowLayout, getAuxBarConfig, getAuxBarKeys,
+      setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows,
+      pinPreviewContainerWidth, resolveTextEditorPreviewRows, resolveTextEditorPreviewGeometry,
+      buildTextEditorPreviewHtml, textEditorPreviewButtonColors, textEditorPreviewKeyFaceHtml };
   `;
   const source = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
   assert.ok(source.includes('\n  main();'));
@@ -315,4 +323,82 @@ test('预览按完整画布固定宽度，辅助栏不能缩窄整个键盘；�
   const html = r.buildAuxBarPreviewHtml(config, [], '', r.state.themeAppSync, geometry);
   assert.match(html, /class="aux-bar-hwrap" style="--aux-bar-size:12%"/);
   r.context.window.innerWidth = 390; r.pinPreviewContainerWidth(); assert.equal(root.style.width, '');
+});
+
+test('text_editor 总高跟随设备，底栏固定 46dp，窄屏同比缩放并保底 120dp', () => {
+  const r = loadApp();
+  const metrics = { screenWidthPx: 1080, keyboardHeightPx: 720, density: 3 };
+  for (const width of [360, 180]) {
+    const geometry = r.resolveTextEditorPreviewGeometry(width, metrics);
+    assert.equal(geometry.dpScale, width / 360);
+    assert.equal(geometry.height, width * 2 / 3);
+    assert.equal(geometry.bottomHeight, 46 * width / 360);
+  }
+  assert.equal(r.resolveTextEditorPreviewGeometry(360, { ...metrics, keyboardHeightPx: 30 }).height, 120);
+  assert.equal(r.resolveTextEditorPreviewGeometry(360, null).height, 240);
+  assert.equal(r.resolveTextEditorPreviewGeometry(360, { keyboardHeightPx: 720 }).height, 240);
+});
+
+test('text_editor 多行共用固定底栏，权重最小 0.5，过滤无动作宏后点击保留原下标', () => {
+  const r = loadApp();
+  const rows = [[], [{ type: 'MacroKey', label: '无动作' },
+    { type: 'MacroKey', label: '<复制>', weight: 0.1, rowHeightPercent: 80, tap: { macro: [] } },
+    { type: 'LayoutSwitchKey', label: 'ABC', weight: 1 }], [{ type: 'BackspaceKey' }]];
+  const original = JSON.stringify(rows);
+  const data = r.resolveTextEditorPreviewRows(rows);
+  assert.equal(data.fallback, false); assert.equal(data.rows.length, 2);
+  assert.equal(data.rows[0][0].rowIndex, 1); assert.equal(data.rows[0][0].keyIndex, 1);
+  const html = r.buildTextEditorPreviewHtml(rows, { height: 240, bottomHeight: 46, dpScale: 1 }, true);
+  assert.equal((html.match(/class="text-editor-key-row" style="height:23px"/g) || []).length, 2);
+  assert.match(html, /width:33\.33333333333333%;padding:4px/);
+  assert.match(html, /data-preview-row="1" data-preview-key="1"/);
+  assert.match(html, /&lt;复制&gt;/); assert.doesNotMatch(html, /无动作|<复制>/);
+  assert.equal(JSON.stringify(rows), original);
+});
+
+test('text_editor 采用主题按钮与不透明触控板，忽略合成覆盖和逐键颜色', () => {
+  const r = loadApp(); r.state.previewComposing = true;
+  const key = { type: 'MacroKey', label: '复制', tap: { macro: [] }, textColor: -65536,
+    backgroundColor: -16711936, composeOverride: { type: 'MacroKey', label: '替换' } };
+  const colors = r.textEditorPreviewButtonColors(key, true);
+  assert.equal(colors.textCss, r.argbToCss(r.resolveThemeTokenColor('keyTextColor')));
+  assert.equal(colors.backgroundCss, r.argbToCss(r.resolveThemeTokenColor('keyBackgroundColor')));
+  assert.equal(r.textEditorPreviewButtonColors(key, false).backgroundCss, 'transparent');
+  const html = r.buildTextEditorPreviewHtml([[key]], { height: 240, bottomHeight: 46, dpScale: 1 }, false);
+  assert.match(html, />复制<\/span>/); assert.doesNotMatch(html, /替换/);
+  assert.match(html, /border-width:1px/); assert.match(html, /dy="-6"/);
+  assert.match(html, /dy="18"/); assert.match(html, /滑动可移动光标/);
+  const pad = r.argbToCss((r.resolveThemeTokenColor('keyBackgroundColor') | 0xff000000) >>> 0);
+  assert.ok(html.includes(`background:${pad}`));
+  assert.equal(r.textEditorPreviewKeyFaceHtml({ type: 'SpaceKey' }), '');
+  assert.equal(r.textEditorPreviewKeyFaceHtml({ type: 'PlaceholderKey', alt: '副标签' }), '');
+  assert.match(r.textEditorPreviewKeyFaceHtml({ type: 'MiniSpaceKey' }), /<svg/);
+  assert.equal(r.textEditorPreviewButtonColors({ type: 'MiniSpaceKey' }, true).backgroundCss,
+    r.argbToCss(r.resolveThemeTokenColor('altKeyBackgroundColor')));
+});
+
+test('text_editor 空布局显示默认六键，未知类型按 App 回退空格，不写入布局', () => {
+  const r = loadApp();
+  const empty = [[], [{ type: 'MacroKey', label: '未配置动作' }]];
+  const original = JSON.stringify(empty);
+  const data = r.resolveTextEditorPreviewRows(empty);
+  assert.equal(data.fallback, true); assert.equal(data.rows[0].length, 6);
+  assert.equal(data.rows[0][0].key.label, 'ABC');
+  const html = r.buildTextEditorPreviewHtml(empty, { height: 240, bottomHeight: 46, dpScale: 1 }, true);
+  assert.doesNotMatch(html, /data-preview-row/); assert.match(html, /opacity:0.45/);
+  assert.equal(JSON.stringify(empty), original);
+  assert.equal(r.resolveTextEditorPreviewRows([[{ type: 'FutureKey' }]]).rows[0][0].key.type, 'SpaceKey');
+});
+
+test('text_editor 编辑与预览始终读取普通 default，不写入未使用的分体或方案排列', () => {
+  const r = loadApp();
+  r.state.layout = { text_editor: { default: layout('D').default, other: layout('O').default,
+    '__variant__:split': layout('S').default } };
+  r.state.selectedBase = 'text_editor'; r.state.selectedSubmode = 'other'; r.state.editingSplit = true;
+  assert.deepEqual(Array.from(r.submodeNames('text_editor')), ['default']);
+  assert.equal(r.getRows()[0][0].main, 'D');
+  r.setRows('text_editor', 'other', layout('E').default);
+  assert.equal(r.state.layout.text_editor.default[0][0].main, 'E');
+  assert.equal(r.state.layout.text_editor.other[0][0].main, 'O');
+  assert.equal(r.state.layout.text_editor['__variant__:split'][0][0].main, 'S');
 });
