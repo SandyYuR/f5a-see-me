@@ -579,6 +579,8 @@
     popupImportRunning: false,
     iconThemeImportRunning: false,
     themeAssetUrlByPath: new Map(),
+    draftAssetIdByUrl: new Map(),
+    draftAssetById: new Map(),
     themeImageMetaByUrl: new Map(),
     dragKey: null,
     dragRow: null,
@@ -723,7 +725,8 @@
         builtin: !!theme?.builtin,
         isDark: !!theme?.isDark,
         colors: normalizeThemeColors(theme?.colors || {}),
-        backgroundImage: String(theme?.backgroundImage || "")
+        backgroundImage: String(theme?.backgroundImage || ""),
+        backgroundImageObject: stripDraftBackgroundObject(theme?.backgroundImageObject)
       }));
       return JSON.stringify({ selectedThemeId: String(selectedThemeId || ""), themes: normalized });
     } catch (_) {
@@ -1202,6 +1205,7 @@
   }
 
   function syncThemeJsonFromState() {
+    scheduleHistoryCommit();
     const text = `${prettyJson(serializeCurrentTheme())}\n`;
     state.suppressThemeJsonInput = true;
     setThemeJsonText(text);
@@ -1632,6 +1636,54 @@
     registerThemeAssetPath(spec.srcFilePath, url);
   }
 
+  function draftBackgroundAssetId(theme) {
+    if (!theme.backgroundImageObject && !theme.backgroundImage) return "";
+    return state.draftAssetIdByUrl.get(theme.backgroundImage) || (theme.backgroundImage ? "" : theme.backgroundAssetId || "");
+  }
+
+  function collectRetainedDraftAssetIds() {
+    const ids = new Set(state.themeCatalog.map(draftBackgroundAssetId).filter(Boolean));
+    const snapshots = [...history.undoStack, ...history.redoStack];
+    try { snapshots.push(localStorage.getItem(DRAFT_KEY)); } catch (_) {}
+    snapshots.forEach((raw) => {
+      try { JSON.parse(raw)?.themes?.forEach((t) => { if (t.backgroundAssetId) ids.add(t.backgroundAssetId); }); } catch (_) {}
+    });
+    // 多张图片同时保存时，新资源也不能被另一笔事务清理。
+    state.draftAssetById.forEach((asset, id) => { if (asset.pending) ids.add(id); });
+    return [...ids];
+  }
+
+  function registerDraftBackgroundAsset(url, blob) {
+    if (state.draftAssetIdByUrl.has(url)) return;
+    const id = generateUuidString();
+    const asset = { url, pending: true, error: "" };
+    state.draftAssetIdByUrl.set(url, id);
+    state.draftAssetById.set(id, asset);
+    updateDraftSaveStatus();
+    window.F5aDraftAssets.save(id, blob, collectRetainedDraftAssetIds()).then(() => {
+      asset.pending = false;
+      // 启动读取期间不覆盖磁盘草稿；启动完成后保存当前文档。
+      if (history.started) saveDraftNow();
+    }).catch((error) => {
+      asset.pending = false;
+      asset.error = error.message || "浏览器禁止图片存储";
+      updateDraftSaveStatus();
+    });
+  }
+
+  function updateDraftSaveStatus() {
+    const assets = state.themeCatalog.map(draftBackgroundAssetId).filter(Boolean).map((id) => state.draftAssetById.get(id));
+    const failed = assets.find((asset) => !asset || asset.error);
+    const missingImage = state.themeCatalog.some((theme) => theme.backgroundImageObject && !theme.backgroundImage && !resolveThemeAssetUrl(theme.backgroundImageObject));
+    if (assets.some((asset) => asset?.pending)) {
+      setStatus("draft-save-status", "正在保存背景图片，请稍候再关闭页面", "");
+    } else if (failed || missingImage || assets.some((asset) => !asset)) {
+      setStatus("draft-save-status", `图片草稿未保存：${failed?.error || "图片资源缺失，请重新导入"}。请及时导出文件`, "err");
+    } else {
+      setStatus("draft-save-status", "浏览器草稿已保存", "ok");
+    }
+  }
+
   function resolveThemeAssetUrl(spec) {
     if (!spec) return "";
     const candidates = [spec.croppedFilePath, spec.srcFilePath]
@@ -1796,6 +1848,7 @@
   }
 
   function syncPopupJsonFromState() {
+    scheduleHistoryCommit();
     state.suppressPopupJsonInput = true;
     setPopupJsonText(`${stringifyPopupEntriesForEditor(serializePopupEntries())}\n`);
     state.suppressPopupJsonInput = false;
@@ -1809,6 +1862,7 @@
     try {
       const parsed = normalizePopupEntries(JSON.parse(getPopupJsonText() || "{}"));
       state.popupEntries = parsed;
+      scheduleHistoryCommit();
       renderPopupEditor();
       updatePopupQrUi();
       setStatus("popup-json-status", `JSON 合法，已实时应用（${Object.keys(parsed).length} 条映射）`, "ok");
@@ -2497,6 +2551,7 @@
       const theme = currentThemeEntry();
       if (!file || !theme || theme.builtin) return;
       const previewUrl = URL.createObjectURL(file);
+      registerDraftBackgroundAsset(previewUrl, file);
       const nextSpec = buildThemeBackgroundSpecForLocalImage(theme, file);
       theme.backgroundImageObject = normalizeThemeBackgroundImageObject(nextSpec);
       theme.backgroundImage = previewUrl;
@@ -3767,6 +3822,7 @@
   }
 
   function renderLayoutPreview() {
+    scheduleHistoryCommit();
     const previewSplit = !!state.previewSplit;
     const rows = previewSplit && !state.editingSplit
       ? (getVariantRows(state.selectedBase, state.selectedSubmode)
@@ -8660,6 +8716,7 @@
     const blob = await imgEntry.async("blob");
     const typedBlob = blob.type ? blob : new Blob([blob], { type: mime });
     const previewUrl = URL.createObjectURL(typedBlob);
+    registerDraftBackgroundAsset(previewUrl, typedBlob);
     return {
       ...themeData,
       backgroundImage: previewUrl,
@@ -9855,6 +9912,7 @@
   }
 
   function syncIconThemeJsonFromState() {
+    scheduleHistoryCommit();
     const text = `${prettyJson(serializeCurrentIconTheme())}\n`;
     const textarea = el("icon-theme-json");
     if (textarea) textarea.value = text;
@@ -10555,12 +10613,11 @@
   }
 
   // ── 撤销/重做 + 草稿自动保存 ──
-  // 采用"签名比对"而非在每个改动点埋点：定时比对全部文档的 JSON 快照，
-  // 变化则把上一份快照压入撤销栈。粒度由轮询间隔决定，可覆盖所有改动入口。
+  // 同一事件中的连续 UI 刷新合并成一次提交；异步导入从同步入口补记。
+  // 撤销/重做前仍补记当前状态，确保未完成排程的修改也能恢复。
   const HISTORY_LIMIT = 100;
-  const WATCH_INTERVAL_MS = 800;
   const DRAFT_KEY = "f5a-editor-draft-v1";
-  const history = { undoStack: [], redoStack: [], lastCommitted: "", restoring: false };
+  const history = { undoStack: [], redoStack: [], lastCommitted: "", restoring: false, started: false, scheduled: false };
 
   function currentHistorySnapshot() {
     try {
@@ -10571,11 +10628,14 @@
           id: t.id, name: t.name, builtin: !!t.builtin, isDark: !!t.isDark,
           colors: t.colors, backgroundImage: t.backgroundImage && String(t.backgroundImage).startsWith("blob:") ? "" : t.backgroundImage,
           backgroundImageObject: stripDraftBackgroundObject(t.backgroundImageObject),
+          backgroundAssetId: draftBackgroundAssetId(t),
           imeOriginalName: t.imeOriginalName || ""
         })),
         selectedThemeId: state.selectedThemeId,
+        themeAppSync: state.themeAppSync,
         iconThemes: (state.iconThemeCatalog || []).map((t) => ({
-          id: t.id, name: t.name, author: t.author || "", version: t.version || 1, builtin: !!t.builtin, icons: t.icons
+          id: t.id, name: t.name, author: t.author || "", version: t.version || 1, builtin: !!t.builtin, icons: t.icons,
+          thumbnailSvg: t.thumbnailSvg || null
         })),
         selectedIconThemeId: state.selectedIconThemeId,
         selectedBase: state.selectedBase,
@@ -10589,7 +10649,7 @@
   }
 
   function stripDraftBackgroundObject(obj) {
-    // blob: URL 刷新后失效，草稿/历史里只保留元数据，图片数据由 IME/ZIP 重新提供
+    // blob: URL 刷新后失效，图片字节在 IndexedDB，快照用稳定 ID 引用。
     if (!obj || typeof obj !== "object") return null;
     const clone = deepClone(obj);
     delete clone.imageWidthHint;
@@ -10631,9 +10691,10 @@
       if (Array.isArray(snap.themes)) {
         state.themeCatalog = snap.themes.map((t) => ({
           ...t,
-          backgroundImage: t.backgroundImage || "",
+          backgroundImage: state.draftAssetById.get(t.backgroundAssetId)?.url || t.backgroundImage || "",
           backgroundImageObject: t.backgroundImageObject || null
         }));
+        state.themeCatalog.forEach((t) => registerThemeAssetForBackground(t.backgroundImageObject, t.backgroundImage));
         state.selectedThemeId = state.themeCatalog.some((t) => t.id === snap.selectedThemeId)
           ? snap.selectedThemeId
           : state.themeCatalog[0]?.id || state.selectedThemeId;
@@ -10644,6 +10705,11 @@
           ? snap.selectedIconThemeId
           : state.iconThemeCatalog[0]?.id || state.selectedIconThemeId;
       }
+      if (snap.themeAppSync && typeof snap.themeAppSync === "object") {
+        state.themeAppSync = { ...state.themeAppSync, ...snap.themeAppSync };
+      }
+      syncThemeAppSyncUiFromState();
+      saveLocalSplitPrefs();
       syncLayoutUiFromState();
       renderThemeList();
       renderThemeEditor();
@@ -10660,44 +10726,49 @@
   }
 
   function undo() {
+    commitHistorySnapshot();
     if (!history.undoStack.length) return;
-    const current = history.lastCommitted || currentHistorySnapshot();
-    const target = history.undoStack.pop();
-    history.redoStack.push(current);
+    const current = currentHistorySnapshot();
+    const target = history.undoStack.at(-1);
     if (restoreSnapshot(target)) {
-      history.lastCommitted = target;
+      history.undoStack.pop();
+      history.redoStack.push(current);
+      history.lastCommitted = currentHistorySnapshot();
+      saveDraftNow();
       setStatus("layout-json-status", "已撤销上一次修改", "ok");
     }
     updateUndoButtons();
   }
 
   function redo() {
+    commitHistorySnapshot();
     if (!history.redoStack.length) return;
-    const current = history.lastCommitted || currentHistorySnapshot();
-    const target = history.redoStack.pop();
-    history.undoStack.push(current);
+    const current = currentHistorySnapshot();
+    const target = history.redoStack.at(-1);
     if (restoreSnapshot(target)) {
-      history.lastCommitted = target;
+      history.redoStack.pop();
+      history.undoStack.push(current);
+      history.lastCommitted = currentHistorySnapshot();
+      saveDraftNow();
       setStatus("layout-json-status", "已重做", "ok");
     }
     updateUndoButtons();
   }
 
   function saveDraftNow() {
+    const snapshot = currentHistorySnapshot();
+    if (!snapshot) return false;
     try {
-      localStorage.setItem(DRAFT_KEY, history.lastCommitted || currentHistorySnapshot());
+      localStorage.setItem(DRAFT_KEY, snapshot);
+      updateDraftSaveStatus();
+      return true;
     } catch (_) {
-      // localStorage 配额不足（多为图标主题内嵌 data: 图标过大），降级为不保存图标主题
-      try {
-        const snap = JSON.parse(currentHistorySnapshot());
-        delete snap.iconThemes;
-        snap.selectedIconThemeId = undefined;
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(snap));
-      } catch (_) { /* 草稿保存失败可忽略 */ }
+      setStatus("draft-save-status", "草稿保存失败：浏览器空间不足或禁止存储，请及时导出文件", "err");
+      return false;
     }
   }
 
-  function restoreDraftFromStorage() {
+  async function restoreDraftFromStorage() {
     let raw = "";
     try { raw = localStorage.getItem(DRAFT_KEY) || ""; } catch (_) { return false; }
     if (!raw) return false;
@@ -10707,28 +10778,59 @@
     // 仅当草稿包含至少一份用户文档时才恢复，避免空草稿覆盖内置初始数据
     const hasContent = (snap.layout && Object.keys(snap.layout).length) || (Array.isArray(snap.themes) && snap.themes.some((t) => !t.builtin));
     if (!hasContent) return false;
+    const assetIds = [...new Set((Array.isArray(snap.themes) ? snap.themes : []).map((t) => t.backgroundAssetId).filter(Boolean))];
+    try {
+      const assets = await window.F5aDraftAssets.load(assetIds);
+      assets.forEach((blob, id) => {
+        const url = URL.createObjectURL(blob);
+        state.draftAssetById.set(id, { url, pending: false, error: "" });
+        state.draftAssetIdByUrl.set(url, id);
+      });
+    } catch (error) {
+      assetIds.forEach((id) => state.draftAssetById.set(id, { url: "", pending: false, error: error.message }));
+    }
     const ok = restoreSnapshot(raw);
     if (ok) {
       history.lastCommitted = currentHistorySnapshot();
       setStatus("layout-json-status", "已恢复上次浏览器草稿（连接 IME 后将以 IME 数据为准）", "ok");
+      updateDraftSaveStatus();
     }
     return ok;
   }
 
   function beginHistoryTracking() {
     history.lastCommitted = currentHistorySnapshot();
+    history.started = true;
     updateUndoButtons();
-    setInterval(() => {
-      if (history.restoring) return;
-      const snap = currentHistorySnapshot();
-      if (!snap || snap === history.lastCommitted) return;
-      history.undoStack.push(history.lastCommitted);
-      if (history.undoStack.length > HISTORY_LIMIT) history.undoStack.shift();
-      history.redoStack = [];
-      history.lastCommitted = snap;
-      updateUndoButtons();
-      saveDraftNow();
-    }, WATCH_INTERVAL_MS);
+    ["input", "change", "click", "drop", "pointerup"].forEach((type) => {
+      document.addEventListener(type, scheduleHistoryCommit, true);
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") { commitHistorySnapshot(); saveDraftNow(); }
+    });
+    window.addEventListener("pagehide", () => { commitHistorySnapshot(); saveDraftNow(); });
+    window.addEventListener("beforeunload", () => saveDraftNow());
+  }
+
+  function scheduleHistoryCommit() {
+    if (!history.started || history.restoring || history.scheduled) return;
+    history.scheduled = true;
+    queueMicrotask(() => {
+      history.scheduled = false;
+      commitHistorySnapshot();
+    });
+  }
+
+  function commitHistorySnapshot() {
+    if (!history.started || history.restoring) return;
+    const snap = currentHistorySnapshot();
+    if (!snap || snap === history.lastCommitted) return;
+    history.undoStack.push(history.lastCommitted);
+    if (history.undoStack.length > HISTORY_LIMIT) history.undoStack.shift();
+    history.redoStack = [];
+    history.lastCommitted = snap;
+    updateUndoButtons();
+    saveDraftNow();
   }
 
   function setupUndoRedo() {
@@ -11160,9 +11262,9 @@
     setupThemeAppSyncUi();
     setupImeBridgeActions();
     setupUiConvenienceFeatures();
-    restoreDraftFromStorage();
-    await autoLoadImeDataOnStartup();
+    await restoreDraftFromStorage();
     beginHistoryTracking();
+    await autoLoadImeDataOnStartup();
     const previewPanel = document.querySelector(".keyboard-preview-panel");
     if (previewPanel) {
       previewPanel.addEventListener("toggle", () => {

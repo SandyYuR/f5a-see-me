@@ -31,7 +31,7 @@ function loadApp() {
     syncLayoutUiFromState = renderThemeList = renderThemeEditor = syncThemeJsonFromState = () => {};
     renderPopupEditor = syncPopupJsonFromState = renderIconThemeEditor = syncIconThemeJsonFromState = () => {};
     syncPreviewToolbarUi = syncThemeAppSyncUiFromState = refreshKeyDialogSummaries = () => {};
-    window.testApi = { state, history, keyDialogState, beginHistoryTracking, undo, redo, saveDraftNow, currentHistorySnapshot, restoreSnapshot, normalizeLayoutObject, applyMainFieldsToDraft, updateDraftFromMainFields, normalizeRowHeightKey, renderSvgPreviewHtml, resolvePreviewColorsForKey, resolveThemeTokenColor, argbToCss, buildAuxBarPreviewHtml, editorKeyLabel, restoreDraftFromStorage, resolveSplitRowLayout, getAuxBarConfig, getAuxBarKeys, setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows, pinPreviewContainerWidth };
+    window.testApi = { state, history, keyDialogState, beginHistoryTracking, commitHistorySnapshot, scheduleHistoryCommit, undo, redo, saveDraftNow, currentHistorySnapshot, restoreSnapshot, normalizeLayoutObject, applyMainFieldsToDraft, updateDraftFromMainFields, normalizeRowHeightKey, renderSvgPreviewHtml, resolvePreviewColorsForKey, resolveThemeTokenColor, argbToCss, buildAuxBarPreviewHtml, editorKeyLabel, restoreDraftFromStorage, registerDraftBackgroundAsset, resolveSplitRowLayout, getAuxBarConfig, getAuxBarKeys, setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows, pinPreviewContainerWidth };
   `;
   const source = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
   assert.ok(source.includes('\n  main();'));
@@ -40,6 +40,43 @@ function loadApp() {
 }
 const layout = label => ({ default: [[{ type: 'AlphabetKey', main: label, alt: '1' }]] });
 const main = r => r.state.layout.default[0][0].main;
+
+test('快速修改 C 后撤销到 B、重做到 C；草稿始终保存当前状态', () => {
+  const r = loadApp();
+  r.state.layout = layout('A'); r.beginHistoryTracking();
+  r.state.layout = layout('B'); r.commitHistorySnapshot();
+  r.state.layout = layout('C'); r.undo();
+  assert.equal(main(r), 'B');
+  r.redo(); assert.equal(main(r), 'C');
+  r.state.layout = layout('D'); r.saveDraftNow();
+  assert.equal(JSON.parse(r.storage.get('f5a-editor-draft-v1')).layout.default[0][0].main, 'D');
+  r.undo(); assert.equal(main(r), 'C');
+  assert.equal(JSON.parse(r.storage.get('f5a-editor-draft-v1')).layout.default[0][0].main, 'C');
+});
+
+test('重做前的新修改清理旧分叉，同一事件多次同步只记录一次', () => {
+  const r = loadApp();
+  r.state.layout = layout('A'); r.beginHistoryTracking();
+  r.state.layout = layout('B'); r.scheduleHistoryCommit(); r.scheduleHistoryCommit(); r.flush();
+  assert.equal(r.history.undoStack.length, 1);
+  r.undo(); r.state.layout = layout('C'); r.redo();
+  assert.equal(main(r), 'C'); assert.equal(r.history.redoStack.length, 0);
+});
+
+test('主题设置和图标缩略图支持撤销、草稿恢复，兼容旧草稿', () => {
+  const r = loadApp();
+  r.state.layout = layout('A'); r.beginHistoryTracking();
+  r.state.themeAppSync.keyRadius = 22;
+  r.state.iconThemeCatalog[0].thumbnailSvg = '<svg/>';
+  r.undo(); assert.equal(r.state.themeAppSync.keyRadius, 6);
+  r.redo(); assert.equal(r.state.themeAppSync.keyRadius, 22);
+  const snap = r.currentHistorySnapshot();
+  r.state.themeAppSync.keyRadius = 1; r.restoreSnapshot(snap);
+  assert.equal(r.state.themeAppSync.keyRadius, 22);
+  assert.equal(r.state.iconThemeCatalog[0].thumbnailSvg, '<svg/>');
+  r.restoreSnapshot(JSON.stringify({ layout: layout('old') }));
+  assert.equal(main(r), 'old'); assert.equal(r.state.themeAppSync.keyRadius, 22);
+});
 
 test('占位键保留分体断点，切换类型默认无文字且完全透明', () => {
   const r = loadApp();
@@ -112,4 +149,44 @@ test('合成态覆盖不改变普通预览主文字的主题颜色', () => {
   const colors = r.resolvePreviewColorsForKey(key);
   assert.equal(colors.textCss, r.argbToCss(r.resolveThemeTokenColor('accentKeyTextColor')));
   assert.notEqual(colors.textCss, colors.backgroundCss);
+});
+
+test('存储配额不足时保留上一份完整草稿，并显示失败', () => {
+  const r = loadApp();
+  r.state.layout = layout('A'); r.saveDraftNow();
+  const before = r.storage.get('f5a-editor-draft-v1');
+  r.context.localStorage.setItem = () => { throw new Error('quota'); };
+  r.state.layout = layout('B'); assert.equal(r.saveDraftNow(), false);
+  assert.equal(r.storage.get('f5a-editor-draft-v1'), before);
+  assert.match(r.element('draft-save-status').textContent, /保存失败/);
+});
+
+test('恢复图片草稿用稳定 ID 读取字节并重建当前页面 URL', async () => {
+  const r = loadApp();
+  r.context.window.F5aDraftAssets = { load: async ids => {
+    assert.deepEqual(Array.from(ids), ['image-a']); return new Map([['image-a', new Blob(['pixel'], { type: 'image/png' })]]);
+  } };
+  r.storage.set('f5a-editor-draft-v1', JSON.stringify({ layout: layout('A'), themes: [
+    { id: 'custom', name: 'Test', colors: {}, backgroundAssetId: 'image-a',
+      backgroundImageObject: { srcFilePath: 'Test/bg.png', croppedFilePath: 'Test/bg.png' } }
+  ] }));
+  assert.equal(await r.restoreDraftFromStorage(), true);
+  assert.match(r.state.themeCatalog[0].backgroundImage, /^blob:/);
+  assert.equal(JSON.parse(r.currentHistorySnapshot()).themes[0].backgroundAssetId, 'image-a');
+  URL.revokeObjectURL(r.state.themeCatalog[0].backgroundImage);
+});
+
+test('图片存储不可用、超限时报告明确失败而非伪装成功', async () => {
+  const context = { window: {}, Blob, Map, Set };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../js/draft-assets.js'), 'utf8'), context);
+  await assert.rejects(context.window.F5aDraftAssets.save('big', new Blob([new Uint8Array(20 * 1024 * 1024 + 1)]), []), /20 MB/);
+  await assert.rejects(context.window.F5aDraftAssets.save('test', new Blob(['pixel']), []), /不支持/);
+  const r = loadApp();
+  r.context.window.F5aDraftAssets = { save: async () => { throw new Error('禁止存储'); } };
+  const url = URL.createObjectURL(new Blob(['pixel']));
+  r.state.themeCatalog = [{ id: 'custom', backgroundImage: url }];
+  r.registerDraftBackgroundAsset(url, new Blob(['pixel']));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(r.element('draft-save-status').textContent, /未保存.*禁止存储/);
+  URL.revokeObjectURL(url);
 });
