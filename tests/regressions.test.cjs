@@ -31,7 +31,7 @@ function loadApp() {
     syncLayoutUiFromState = renderThemeList = renderThemeEditor = syncThemeJsonFromState = () => {};
     renderPopupEditor = syncPopupJsonFromState = renderIconThemeEditor = syncIconThemeJsonFromState = () => {};
     syncPreviewToolbarUi = syncThemeAppSyncUiFromState = refreshKeyDialogSummaries = () => {};
-    window.testApi = { state, history, keyDialogState, beginHistoryTracking, commitHistorySnapshot, scheduleHistoryCommit, undo, redo, saveDraftNow, currentHistorySnapshot, restoreSnapshot, normalizeLayoutObject, applyMainFieldsToDraft, updateDraftFromMainFields, normalizeRowHeightKey, renderSvgPreviewHtml, resolvePreviewColorsForKey, resolveThemeTokenColor, argbToCss, buildAuxBarPreviewHtml, editorKeyLabel, restoreDraftFromStorage, registerDraftBackgroundAsset, resolveAuxBarPreviewGeometry, resolveSplitRowLayout, getAuxBarConfig, getAuxBarKeys, setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows, pinPreviewContainerWidth };
+    window.testApi = { state, history, keyDialogState, beginHistoryTracking, commitHistorySnapshot, scheduleHistoryCommit, undo, redo, saveDraftNow, currentHistorySnapshot, restoreSnapshot, normalizeLayoutObject, applyMainFieldsToDraft, updateDraftFromMainFields, normalizeRowHeightKey, renderSvgPreviewHtml, resolvePreviewColorsForKey, resolveThemeTokenColor, argbToCss, buildAuxBarPreviewHtml, editorKeyLabel, restoreDraftFromStorage, registerDraftBackgroundAsset, resolvePreviewKey, resolveAuxBarPreviewGeometry, resolveSplitRowLayout, getAuxBarConfig, getAuxBarKeys, setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows, pinPreviewContainerWidth };
   `;
   const source = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
   assert.ok(source.includes('\n  main();'));
@@ -248,6 +248,37 @@ test('分体侧栏和主键采用扣除中缝的同一宽度基准，包括桥�
   }
   assert.equal(r.resolveAuxBarPreviewGeometry({ position: 'top', sizePercent: 15 }, true, 0.6).sizePercent, 15);
   assert.equal(r.resolveAuxBarPreviewGeometry({ position: 'left', sizePercent: 15 }, false, 0.6).keyAreaScale, 1);
+});
+
+test('合成预览替换文字与动作，保持尺寸、基础颜色；开关不改变文档历史', () => {
+  const r = loadApp();
+  const base = { type: 'LayoutSwitchKey', label: '?123', weight: 0.15, splitAfter: true,
+    textColor: -1, backgroundColor: -16776961,
+    composeOverride: { type: 'MacroKey', label: 'Esc', swipeDownLabel: '撤销', weight: 0.8,
+      textColor: -65536, tap: { macro: [{ type: 'tap', keys: [{ fcitx: 'Escape' }] }] } } };
+  r.state.layout = { default: [[base]] }; r.beginHistoryTracking();
+  assert.equal(r.resolvePreviewKey(base).key.label, '?123');
+  const snapshot = r.currentHistorySnapshot(); r.state.previewComposing = true;
+  const active = r.resolvePreviewKey(base);
+  assert.equal(active.key.label, 'Esc'); assert.equal(active.key.type, 'MacroKey');
+  assert.equal(active.key.weight, 0.15); assert.equal(active.key.splitAfter, true);
+  assert.equal(active.key.tap.macro[0].keys[0].fcitx, 'Escape');
+  assert.equal(r.resolvePreviewColorsForKey(active.appearanceKey).textCss, 'rgba(255, 255, 255, 1)');
+  r.commitHistorySnapshot(); assert.equal(r.history.undoStack.length, 0);
+  assert.equal(r.currentHistorySnapshot(), snapshot);
+  r.state.previewComposing = false; assert.equal(r.resolvePreviewKey(base).key.label, '?123');
+});
+
+test('合成预览独立颜色使用覆盖设置，外观类型仍沿用基础键，辅助栏同样切换', () => {
+  const r = loadApp(); r.state.previewComposing = true;
+  const base = { type: 'LayoutSwitchKey', label: '?123', textColor: -1, backgroundColor: -16776961,
+    composeOverride: { type: 'MacroKey', label: 'Esc', independentColor: true, textColor: -65536 } };
+  const active = r.resolvePreviewKey(base);
+  assert.equal(active.appearanceKey.type, 'LayoutSwitchKey');
+  assert.equal(active.appearanceKey.backgroundColor, undefined);
+  assert.equal(r.resolvePreviewColorsForKey(active.appearanceKey).textCss, 'rgba(255, 0, 0, 1)');
+  const html = r.buildAuxBarPreviewHtml({ position: 'left', sizePercent: 15 }, [base], '', r.state.themeAppSync);
+  assert.match(html, />Esc<\/span>/); assert.doesNotMatch(html, />\?123<\/span>/);
 });
 
 test('布局归一化往返保留方案键、分体排列与共用辅助栏', () => {

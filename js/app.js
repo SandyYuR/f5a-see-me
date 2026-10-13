@@ -568,6 +568,7 @@
     // __variant__:split（app fx-rime-only 的 LayoutVariant.Split）
     editingSplit: false,
      previewSplit: false,
+     previewComposing: false,
     suppressLayoutJsonInput: false,
     wasmReady: false,
     wasmInitPromise: null,
@@ -3829,6 +3830,25 @@
     return icon || escapeHtml(previewTitleFromObj(key));
   }
 
+  function resolvePreviewKey(sourceKey) {
+    const override = state.previewComposing && sourceKey?.composeOverride;
+    if (!override || typeof override !== "object" || !override.type) {
+      return { key: sourceKey, appearanceKey: sourceKey };
+    }
+    // App 的合成覆盖替换文字/图标/动作，尺寸、外观类型和透明标记沿用基础键。
+    const key = { ...override, weight: sourceKey.weight, rowHeightPercent: sourceKey.rowHeightPercent,
+      splitAfter: sourceKey.splitAfter, transparent: sourceKey.transparent };
+    let appearanceKey = sourceKey;
+    if (override.independentColor === true) {
+      appearanceKey = { type: sourceKey.type };
+      keyColorFields.forEach((field) => {
+        if (override[field.customKey] != null) appearanceKey[field.customKey] = override[field.customKey];
+        if (override[field.monetKey] != null) appearanceKey[field.monetKey] = override[field.monetKey];
+      });
+    }
+    return { key, appearanceKey };
+  }
+
   function resolveAuxBarPreviewGeometry(config, split, gapFraction) {
     const sizeFraction = (Number(config?.sizePercent) || 0) / 100;
     if (!split || (config?.position !== "left" && config?.position !== "right")) {
@@ -3888,11 +3908,12 @@
       const workRow = splitRender ? duplicateMiddleKeyForPreview(row) : row;
       const splitLayout = splitRender ? resolveSplitRowLayout(workRow, splitGapFrac, splitAlignHalves, auxGeometry.keyAreaScale) : null;
       const widths = splitLayout ? splitLayout.widths : resolveRegularRowWidths(workRow);
-      return `<div class="layout-row" style="--row-height:${rowHeight}px;--key-height:${keyHeight}px"><div class="keys">${workRow.map((key, keyIndex) => {
+      return `<div class="layout-row" style="--row-height:${rowHeight}px;--key-height:${keyHeight}px"><div class="keys">${workRow.map((sourceKey, keyIndex) => {
+        const { key, appearanceKey } = resolvePreviewKey(sourceKey);
         const w = widths[keyIndex] || 0;
         const widthPercent = `${(w * 100).toFixed(6)}%`;
-        const previewColors = resolvePreviewColorsForKey(key);
-        const isActionKey = key.type === 'ReturnKey' || key.type === 'LayoutSwitchKey' || key.type === 'LayerSwitchKey';
+        const previewColors = resolvePreviewColorsForKey(appearanceKey);
+        const isActionKey = appearanceKey.type === 'ReturnKey' || appearanceKey.type === 'LayoutSwitchKey' || appearanceKey.type === 'LayerSwitchKey';
         const punctPlacement = resolvePreviewPunctPlacement(key, punctPos, keyHeight);
         const isDirectional = punctPlacement === 'directional';
         const keyExtraClasses = [
@@ -3901,7 +3922,7 @@
           cfg.borderEnabled && cfg.borderOutline ? 'border-outline' : '',
           (cfg.borderEnabled
             ? (cfg.gboardStyle && isActionKey)
-            : (key.type === 'ReturnKey' || (cfg.gboardStyle && (key.type === 'LayoutSwitchKey' || key.type === 'LayerSwitchKey'))))
+            : (appearanceKey.type === 'ReturnKey' || (cfg.gboardStyle && (appearanceKey.type === 'LayoutSwitchKey' || appearanceKey.type === 'LayerSwitchKey'))))
             ? 'gboard-pill'
             : '',
           punctPlacement === 'bottom' ? 'punct-bottom' : punctPlacement === 'top-center' ? 'punct-top-center' : '',
@@ -3921,15 +3942,15 @@
           if (key.swipeUp || key.swipeDown) badges += `<span class="key-badge key-badge-swipe" title="含上下划动"></span>`;
           else if (key.swipe) badges += `<span class="key-badge key-badge-swipe-legacy" title="含划动（旧单槽）"></span>`;
         }
-        const originalIndex = typeof key.__dupOf === "number" ? key.__dupOf : keyIndex;
-        const previewEditTitle = `${keyTypeLabel(key.type)}。点击按键可直接编辑`;
+        const originalIndex = typeof sourceKey.__dupOf === "number" ? sourceKey.__dupOf : keyIndex;
+        const previewEditTitle = `${keyTypeLabel(sourceKey.type)}${state.previewComposing ? "（合成中预览）" : ""}。点击按键可直接编辑`;
         // PlaceholderKey 始终只承担布局占位，不在预览中绘制成独立按键；
         // transparent 仅影响编辑器/导出语义，不能改变预览的空白占位外观。
-        const isGhostPlaceholder = key.type === "PlaceholderKey";
-        const dupAttr = typeof key.__dupOf === "number" ? ` data-preview-dup="1"` : "";
+        const isGhostPlaceholder = sourceKey.type === "PlaceholderKey";
+        const dupAttr = typeof sourceKey.__dupOf === "number" ? ` data-preview-dup="1"` : "";
         const slotHtml = isGhostPlaceholder
           ? `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key placeholder-key-ghost" style="--key-width:${widthPercent}" data-preview-row="${rowIndex}" data-preview-key="${originalIndex}"${dupAttr} tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"></div></div>`
-          : `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(key)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}" data-preview-row="${rowIndex}" data-preview-key="${originalIndex}"${dupAttr} tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(key)}</span>${alt}${hint}${badges}</div></div>`;
+          : `<div class="layout-key-slot" style="--key-width:${widthPercent}"><div class="layout-key ${previewVariantClass(appearanceKey)} ${keyExtraClasses}" style="${escapeAttr(keyStyle)}" data-preview-row="${rowIndex}" data-preview-key="${originalIndex}"${dupAttr} tabindex="0" role="button" title="${escapeAttr(previewEditTitle)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(key)}</span>${alt}${hint}${badges}</div></div>`;
         if (splitLayout && splitLayout.gapAfter === keyIndex) {
           const renderedGapPct = Math.max(0, (splitLayout.gapFracRendered ?? splitGapFrac) * 100).toFixed(4);
           return `${slotHtml}<div class="layout-key-slot layout-split-gap" style="--key-width:${renderedGapPct}%"></div>`;
@@ -3948,7 +3969,7 @@
     const splitMeta = splitRender
       ? `，分体布局（横向扩展，中缝 ${Math.round(splitGapFrac * 100)}%${splitAlignHalves ? "" : "，不强制对齐"}）`
       : "";
-    setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${height ? `，键盘高度 ${height}%` : ""}${splitMeta}${auxMeta}`, "");
+    setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${state.previewComposing ? "，合成中" : ""}${height ? `，键盘高度 ${height}%` : ""}${splitMeta}${auxMeta}`, "");
     renderThemeSupplementPreview();
     updateFixedChromeMetrics();
   }
@@ -3958,10 +3979,10 @@
     const verticalHeights = resolveRowHeightPercents(auxBarKeys.map((key) => [key]));
     const borderWidth = cfg.borderEnabled ? (cfg.borderOutline ? 1 : 0) : 0;
     const keyStyleOf = (key) => {
-      const colors = resolvePreviewColorsForKey(key);
+      const colors = resolvePreviewColorsForKey(resolvePreviewKey(key).appearanceKey);
       return `--preview-key-bg:${colors.backgroundCss};color:${colors.textCss};border-color:${colors.borderCss};--preview-key-shadow:${colors.borderCss};border-width:${borderWidth}px;border-style:${borderWidth > 0 ? 'solid' : 'none'};`;
     };
-    const chipOf = (key, auxIndex) => `<div class="layout-key-slot" style="--key-width:0%;--aux-key-flex:${verticalHeights[auxIndex] || 0}"><div class="layout-key ${previewVariantClass(key)}" style="${escapeAttr(keyStyleOf(key))}" data-preview-aux-key="${auxIndex}" tabindex="0" role="button" title="${escapeAttr(`${keyTypeLabel(key.type)}。点击按键可直接编辑`)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(key)}</span></div></div>`;
+    const chipOf = (key, auxIndex) => `<div class="layout-key-slot" style="--key-width:0%;--aux-key-flex:${verticalHeights[auxIndex] || 0}"><div class="layout-key ${previewVariantClass(resolvePreviewKey(key).appearanceKey)}" style="${escapeAttr(keyStyleOf(key))}" data-preview-aux-key="${auxIndex}" tabindex="0" role="button" title="${escapeAttr(`${keyTypeLabel(key.type)}。点击按键可直接编辑`)}"><span class="layout-key-blur-mask"></span><span class="layout-key-blur-tint"></span><span class="layout-key-main">${previewKeyFaceHtml(resolvePreviewKey(key).key)}</span></div></div>`;
     const auxKeysHtml = auxBarKeys.length
       ? `<div class="keys aux-bar-keys">${auxBarKeys.map(chipOf).join("")}</div>`
       : `<div class="aux-bar-placeholder">辅助选择栏（无按键，运行时显示候选标签页）</div>`;
@@ -10940,6 +10961,8 @@
     if (gboard) gboard.checked = !!state.themeAppSync.gboardStyle;
     const previewSplit = el("pt-split");
     if (previewSplit) previewSplit.checked = !!state.previewSplit;
+    const composing = el("pt-composing");
+    if (composing) composing.checked = !!state.previewComposing;
     const splitGap = el("pt-split-gap");
     const splitControlsEnabled = !!state.previewSplit;
     if (splitGap) {
@@ -10996,6 +11019,10 @@
       state.previewSplit = !!e.target.checked;
       saveLocalSplitPrefs();
       syncPreviewToolbarUi();
+      renderLayoutPreview();
+    });
+    el("pt-composing")?.addEventListener("change", (e) => {
+      state.previewComposing = !!e.target.checked;
       renderLayoutPreview();
     });
     el("pt-gboard-style")?.addEventListener("change", (e) => {
