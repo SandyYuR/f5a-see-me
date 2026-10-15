@@ -1,0 +1,594 @@
+[
+  {
+    "n": 1,
+    "name": "界面配色切换",
+    "entry": ".site-theme-btn ×3",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 2,
+    "name": "撤销",
+    "entry": "top-undo / float-undo / Ctrl+Z",
+    "tokens": 3,
+    "located": 3,
+    "status": "入口已定位"
+  },
+  {
+    "n": 3,
+    "name": "重做",
+    "entry": "top-redo / float-redo / Ctrl+Y",
+    "tokens": 3,
+    "located": 3,
+    "status": "入口已定位"
+  },
+  {
+    "n": 4,
+    "name": "回到顶部",
+    "entry": "float-top",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 5,
+    "name": "标签页切换",
+    "entry": ".tab ×4 (data-tab-target)",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 6,
+    "name": "草稿自动保存",
+    "entry": "（beforeunload/pagehide）",
+    "tokens": 0,
+    "located": 0,
+    "status": "无记号"
+  },
+  {
+    "n": 7,
+    "name": "预览工具条-高度",
+    "entry": "pt-height",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 8,
+    "name": "预览工具条-圆角/横纵距",
+    "entry": "pt-corner / pt-gap-h / pt-gap-v",
+    "tokens": 3,
+    "located": 3,
+    "status": "入口已定位"
+  },
+  {
+    "n": 9,
+    "name": "预览工具条-边框/描边",
+    "entry": "pt-border / pt-stroke",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 10,
+    "name": "预览工具条-提示/图例",
+    "entry": "pt-hints + preview-hint-legend",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 11,
+    "name": "预览工具条-合成中",
+    "entry": "pt-composing",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 12,
+    "name": "预览工具条-分体",
+    "entry": "pt-split / pt-align-halves / pt-split-gap",
+    "tokens": 3,
+    "located": 3,
+    "status": "入口已定位"
+  },
+  {
+    "n": 13,
+    "name": "预览工具条-Gboard",
+    "entry": "pt-gboard-style",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 14,
+    "name": "点击预览键编辑",
+    "entry": "layout-preview（委托）",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 15,
+    "name": "预览键按压反馈",
+    "entry": "layout-preview（pointer）",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 16,
+    "name": "布局/子模式切换",
+    "entry": "layout-base-select / layout-submode-select",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 17,
+    "name": "新增布局/子布局",
+    "entry": "layout-add-layout → layout-add-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 18,
+    "name": "删除布局/子模式",
+    "entry": "layout-delete-layout",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 19,
+    "name": "重命名布局",
+    "entry": "layout-rename-layout",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 20,
+    "name": "重置示例",
+    "entry": "layout-reset",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 21,
+    "name": "分体布局编辑开关",
+    "entry": "layout-split-mode",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 22,
+    "name": "布局专用高度",
+    "entry": "layout-height-override / -landscape",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 23,
+    "name": "行增删与拖拽排序",
+    "entry": "layout-rows（动态 .row-add-key/.row-delete/拖拽）",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 24,
+    "name": "键编辑/删除/拖拽",
+    "entry": "layout-rows（键 click/contextmenu/drag）",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 25,
+    "name": "按键编辑对话框",
+    "entry": "layout-key-dialog",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 26,
+    "name": "显示文本编辑",
+    "entry": "layout-key-open-display-text → display-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 27,
+    "name": "标签编辑",
+    "entry": "layout-key-open-labels → labels-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 28,
+    "name": "事件编辑（5 通道）",
+    "entry": "layout-key-open-macro → macro-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 29,
+    "name": "事件步骤编辑",
+    "entry": "macro-event-dialog",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 30,
+    "name": "按键颜色编辑",
+    "entry": "layout-key-open-colors → colors-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 31,
+    "name": "合成中按键编辑",
+    "entry": "layout-key-open-compose",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 32,
+    "name": "按键完整 JSON",
+    "entry": "layout-key-open-json → key-json-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 33,
+    "name": "分体断点",
+    "entry": "layout-key-split-after",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 34,
+    "name": "完全透明键",
+    "entry": "layout-key-transparent",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 35,
+    "name": "渐变着色",
+    "entry": "layout-open-gradient → gradient-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 36,
+    "name": "清除按键颜色",
+    "entry": "layout-clear-colors → 确认对话框",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 37,
+    "name": "辅助选择栏",
+    "entry": "layout-open-aux-bar → aux-bar-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 38,
+    "name": "导出布局 JSON",
+    "entry": "layout-download-json",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 39,
+    "name": "导入布局 JSON 文件",
+    "entry": "layout-import-file",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 40,
+    "name": "布局 IME 读写",
+    "entry": "layout-ime-load/save/profile/refresh",
+    "tokens": 4,
+    "located": 4,
+    "status": "入口已定位"
+  },
+  {
+    "n": 41,
+    "name": "分享布局二维码",
+    "entry": "layout-share-current → layout-qr-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 42,
+    "name": "导入布局二维码",
+    "entry": "layout-import-qr-image(+file)",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 43,
+    "name": "布局 JSON 面板",
+    "entry": "layout-json + check/fix/format/copy",
+    "tokens": 5,
+    "located": 5,
+    "status": "入口已定位"
+  },
+  {
+    "n": 44,
+    "name": "主题列表选择",
+    "entry": "theme-list（动态卡片）",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 45,
+    "name": "复制/改名/删除主题",
+    "entry": "theme-create-from-current / rename-custom / delete-custom",
+    "tokens": 3,
+    "located": 3,
+    "status": "入口已定位"
+  },
+  {
+    "n": 46,
+    "name": "主题颜色行编辑",
+    "entry": "theme-color-rows（动态行）",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 47,
+    "name": "背景图导入/清除",
+    "entry": "theme-import-background(+file) / clear-background",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 48,
+    "name": "背景参数",
+    "entry": "theme-background-brightness/blur/rotation",
+    "tokens": 3,
+    "located": 3,
+    "status": "入口已定位"
+  },
+  {
+    "n": 49,
+    "name": "背景裁剪",
+    "entry": "theme-background-open-crop → theme-crop-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 50,
+    "name": "同步 App 主题配置",
+    "entry": "theme-app-* ×7",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 51,
+    "name": "导出主题 JSON",
+    "entry": "theme-export-json",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 52,
+    "name": "导入主题",
+    "entry": "theme-import-shared(+file)",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 53,
+    "name": "分享主题二维码",
+    "entry": "theme-share-current → theme-qr-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 54,
+    "name": "主题 IME 读写",
+    "entry": "theme-ime-load/save",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 55,
+    "name": "主题 JSON 面板",
+    "entry": "theme-json + 4 按钮",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 56,
+    "name": "弹出字符新增映射",
+    "entry": "popup-add-mapping",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 57,
+    "name": "映射条目编辑",
+    "entry": "popup-entry-list（chip 动态）",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 58,
+    "name": "弹出字符导入导出 JSON",
+    "entry": "popup-export/import-json(+file)",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 59,
+    "name": "弹出字符二维码",
+    "entry": "popup-generate-qr → popup-qr-dialog / import-qr-image(+file)",
+    "tokens": 3,
+    "located": 3,
+    "status": "入口已定位"
+  },
+  {
+    "n": 60,
+    "name": "弹出字符 IME 读写",
+    "entry": "popup-ime-load/save",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 61,
+    "name": "弹出字符 JSON 面板",
+    "entry": "popup-json + 4 按钮",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 62,
+    "name": "图标主题新建/改名/删除",
+    "entry": "icon-theme-create-new/rename/delete",
+    "tokens": 3,
+    "located": 3,
+    "status": "入口已定位"
+  },
+  {
+    "n": 63,
+    "name": "图标主题列表选择",
+    "entry": "icon-theme-list（动态卡片）",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 64,
+    "name": "导出图标主题 JSON/ZIP",
+    "entry": "icon-theme-export-json / export-zip",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 65,
+    "name": "导入图标主题",
+    "entry": "icon-theme-import-json(+file) / import-shared(+file)",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 66,
+    "name": "图标主题二维码",
+    "entry": "icon-theme-generate-qr → qr-dialog / import-qr-image(+file)",
+    "tokens": 3,
+    "located": 3,
+    "status": "入口已定位"
+  },
+  {
+    "n": 67,
+    "name": "图标主题 IME 读写",
+    "entry": "icon-theme-ime-load/save",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 68,
+    "name": "图标槽位编辑",
+    "entry": "icon-theme-slots → icon-slot-dialog",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 69,
+    "name": "图标主题 JSON 面板",
+    "entry": "icon-theme-json + 4 按钮",
+    "tokens": 1,
+    "located": 1,
+    "status": "入口已定位"
+  },
+  {
+    "n": 70,
+    "name": "撤销/重做快捷键",
+    "entry": "document keydown",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 71,
+    "name": "无障碍键激活预览键",
+    "entry": "layout-preview keydown",
+    "tokens": 2,
+    "located": 2,
+    "status": "入口已定位"
+  },
+  {
+    "n": 72,
+    "name": "二维码协议栈",
+    "entry": "（app.js 内部）",
+    "tokens": 0,
+    "located": 0,
+    "status": "无记号"
+  },
+  {
+    "n": 73,
+    "name": "背景草稿存储",
+    "entry": "（draft-assets.js）",
+    "tokens": 0,
+    "located": 0,
+    "status": "无记号"
+  },
+  {
+    "n": 74,
+    "name": "JSON 宽松修复引擎",
+    "entry": "（json-lint.js）",
+    "tokens": 0,
+    "located": 0,
+    "status": "无记号"
+  }
+]

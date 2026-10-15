@@ -363,6 +363,21 @@
   const defaultThemeColors = deepClone(
     builtinThemePresets.find((preset) => preset.name === defaultThemePresetName)?.colors || builtinThemePresets[0].colors
   );
+
+  // ---- 输入法 app 内置资源(fx-rime-only/app/src/main/assets/bundled/)----
+  // 由 tests/gen-presets.cjs 从 app assets 生成,内嵌在 js/builtin-presets.js 与
+  // js/symbol-data.js,data/ 下留同源 JSON。两份逐字段一致,由
+  // `node tests/gen-presets.cjs --verify` 守住。
+  const APP_THEME_PRESETS = Array.isArray(globalThis.F5A_BUILTIN_PRESETS?.themes)
+    ? globalThis.F5A_BUILTIN_PRESETS.themes
+    : [];
+  const APP_ICON_THEME_PRESETS = Array.isArray(globalThis.F5A_BUILTIN_PRESETS?.iconThemes)
+    ? globalThis.F5A_BUILTIN_PRESETS.iconThemes
+    : [];
+  const APP_SYMBOL_DATA = globalThis.F5A_SYMBOL_DATA && typeof globalThis.F5A_SYMBOL_DATA === "object"
+    ? globalThis.F5A_SYMBOL_DATA
+    : {};
+
   const monetResourceIds = buildMonetResourceIds();
   const macroStepTypes = ["tap", "shortcut", "edit", "app", "layer", "down", "up", "text"];
   const macroStepTypeLabels = {
@@ -562,6 +577,10 @@
     themeCatalog: createBuiltinThemeCatalog(),
     selectedThemeId: `builtin-${defaultThemePresetName}`,
     activeTab: "tab-layout",
+    themeListFilter: "",
+    themeSourceFilter: "all",
+    randomTheme: null,
+    iconThemeListFilter: "",
     selectedBase: "default",
     selectedSubmode: DEFAULT_SUBMODE,
     // 分体布局编辑态：勾选「分体键盘布局」后，行编辑/预览/保存都作用于当前条目的
@@ -602,6 +621,7 @@
     lastThemeJsonCardHeight: 0,
     lastPopupJsonCardHeight: 0,
     lastIconThemeJsonCardHeight: 0,
+    lastSymbolJsonCardHeight: 0,
     layoutHeightObserver: null,
     themeHeightObserver: null,
     popupHeightObserver: null,
@@ -665,7 +685,7 @@
       startY: 0,
       startRect: null
     },
-    iconThemeCatalog: [createDefaultIconTheme()],
+    iconThemeCatalog: createBuiltinIconThemeCatalog(),
     selectedIconThemeId: "builtin-default",
     initialIconThemeCatalogSignature: "",
   };
@@ -1027,7 +1047,7 @@
   }
 
   function createBuiltinThemeCatalog() {
-    return builtinThemePresets.map((preset) => ({
+    const localPresets = builtinThemePresets.map((preset) => ({
       id: `builtin-${preset.name}`,
       name: preset.name,
       builtin: true,
@@ -1035,6 +1055,33 @@
       colors: normalizeThemeColors(deepClone(preset.colors)),
       backgroundImage: ""
     }));
+    // app 内置主题追加在后:id 带 app- 前缀,与本地预设不会重名;
+    // 明暗直接采用 app 主题自带的 isDark,不再靠名字猜。
+    const appPresets = APP_THEME_PRESETS.map((preset) => ({
+      id: `app-${preset.name}`,
+      name: preset.name,
+      builtin: true,
+      isDark: !!preset.isDark,
+      sourceLabel: "输入法内置",
+      colors: normalizeThemeColors(deepClone(preset.colors)),
+      backgroundImage: typeof preset.backgroundImage === "string" ? preset.backgroundImage : ""
+    }));
+    return localPresets.concat(appPresets);
+  }
+
+  function createBuiltinIconThemeCatalog() {
+    const localTheme = createDefaultIconTheme();
+    const appThemes = APP_ICON_THEME_PRESETS.map((preset) => ({
+      id: `app-icon-${preset.name}`,
+      name: preset.name,
+      author: "",
+      version: Number(preset.version) || 1,
+      builtin: true,
+      sourceLabel: "输入法内置",
+      thumbnailSvg: preset.thumbnailSvg || null,
+      icons: deepClone(preset.icons || {})
+    }));
+    return [localTheme].concat(appThemes);
   }
 
   function currentThemeEntry() {
@@ -1107,28 +1154,70 @@
     return { changed: true, name: nextName };
   }
 
-  function renderThemeList() {
-    const root = el("theme-list");
-    if (!root) return;
-    root.innerHTML = state.themeCatalog.map((theme) => {
-      const barColor = argbToCss(normalizeColorValue(theme.colors.barColor));
-      const keyboardColor = argbToCss(normalizeColorValue(theme.colors.keyboardColor));
-      const dividerColor = argbToCss(normalizeColorValue(theme.colors.dividerColor));
-      const keyTextColor = argbToCss(normalizeColorValue(theme.colors.keyTextColor));
-      const spaceBarColor = argbToCss(normalizeColorValue(theme.colors.spaceBarColor));
-      const accentBg = argbToCss(normalizeColorValue(theme.colors.accentKeyBackgroundColor));
-      const backgroundLayerStyle = buildThemeBackgroundImageLayerCss(theme);
-      const bgHasImage = backgroundLayerStyle.backgroundImage !== "none";
-      const bgImageCss = escapeAttr(backgroundLayerStyle.backgroundImage);
-      // Card is a thumbnail — use simple cover/center regardless of crop rect.
-      // The crop placement is for full-size layout preview, not scaled-down cards.
-      const previewStyle = `background-color:${escapeAttr(keyboardColor)};background-image:${bgImageCss};background-size:cover;background-position:center;`;
-      // Overlay only renders when there is an image; filter + transform on top
-      const bgOverlayStyle = bgHasImage
-        ? `background-image:${bgImageCss};background-size:cover;background-position:center;filter:${escapeAttr(backgroundLayerStyle.filter)};transform:${escapeAttr(backgroundLayerStyle.transform)};`
-        : "display:none;";
-      return `
-        <button type="button" class="theme-card ${theme.id === state.selectedThemeId ? "active" : ""}" data-theme-id="${escapeAttr(theme.id)}">
+  // 主题来源:自定义 / 输入法内置(app- 前缀)/ 编辑器自带(其余 builtin)
+  function themeSourceOf(theme) {
+    if (!theme || !theme.builtin) return "custom";
+    return String(theme.id).indexOf("app-") === 0 ? "app" : "local";
+  }
+
+  const THEME_SOURCE_LABELS = { app: "输入法内置", local: "编辑器自带", custom: "自定义" };
+
+  // 主题卡片的副标题:非自定义主题都标注来源,自定义主题标注明暗
+  function themeCardMetaText(theme) {
+    const source = themeSourceOf(theme);
+    const tone = theme.isDark ? "深色" : "浅色";
+    return source === "custom" ? "自定义 · " + tone : (THEME_SOURCE_LABELS[source] || "") + " · " + tone;
+  }
+
+  function themeFilterText(theme) {
+    return (String(theme.name || "") + " " + themeCardMetaText(theme)).toLowerCase();
+  }
+
+  function themeGroupLabel(source) {
+    if (source === "custom") return "自定义主题";
+    if (source === "app") return "输入法内置主题";
+    return "编辑器自带主题";
+  }
+
+  // 名称 + 来源筛选的结果;catalog 顺序不变,只在组内保留原相对次序
+  function filterThemeCatalog(catalog) {
+    const query = String(state.themeListFilter || "").trim().toLowerCase();
+    const source = state.themeSourceFilter || "all";
+    return (catalog || []).filter((theme) => {
+      if (source !== "all" && themeSourceOf(theme) !== source) return false;
+      if (query && themeFilterText(theme).indexOf(query) < 0) return false;
+      return true;
+    });
+  }
+
+  // 固定展示顺序:编辑器自带 → 输入法内置 → 自定义
+  function themeSourceOrder(catalog) {
+    const order = ["local", "app", "custom"];
+    const buckets = { local: [], app: [], custom: [] };
+    (catalog || []).forEach((theme) => { buckets[themeSourceOf(theme)].push(theme); });
+    const out = [];
+    order.forEach((key) => { if (buckets[key].length) out.push([key, buckets[key]]); });
+    return out;
+  }
+
+  function themeCardHtml(theme) {
+    const barColor = argbToCss(normalizeColorValue(theme.colors.barColor));
+    const keyboardColor = argbToCss(normalizeColorValue(theme.colors.keyboardColor));
+    const keyTextColor = argbToCss(normalizeColorValue(theme.colors.keyTextColor));
+    const spaceBarColor = argbToCss(normalizeColorValue(theme.colors.spaceBarColor));
+    const accentBg = argbToCss(normalizeColorValue(theme.colors.accentKeyBackgroundColor));
+    const backgroundLayerStyle = buildThemeBackgroundImageLayerCss(theme);
+    const bgHasImage = backgroundLayerStyle.backgroundImage !== "none";
+    const bgImageCss = escapeAttr(backgroundLayerStyle.backgroundImage);
+    // Card is a thumbnail — use simple cover/center regardless of crop rect.
+    // The crop placement is for full-size layout preview, not scaled-down cards.
+    const previewStyle = `background-color:${escapeAttr(keyboardColor)};background-image:${bgImageCss};background-size:cover;background-position:center;`;
+    // Overlay only renders when there is an image; filter + transform on top
+    const bgOverlayStyle = bgHasImage
+      ? `background-image:${bgImageCss};background-size:cover;background-position:center;filter:${escapeAttr(backgroundLayerStyle.filter)};transform:${escapeAttr(backgroundLayerStyle.transform)};`
+      : "display:none;";
+    return `
+        <button type="button" class="theme-card ${theme.id === state.selectedThemeId ? "active" : ""}" data-theme-id="${escapeAttr(theme.id)}" title="${escapeAttr(theme.name)}">
           <div class="theme-card-preview" style="${previewStyle}" data-theme-id="${escapeAttr(theme.id)}">
             <span class="theme-card-preview-bg" style="${bgOverlayStyle}"></span>
             <span class="theme-card-preview-bar" style="background:${escapeAttr(barColor)}"></span>
@@ -1136,9 +1225,38 @@
             <span class="theme-card-preview-key theme-card-preview-space" style="--theme-card-key-bg:${escapeAttr(spaceBarColor)}"><span class="theme-card-preview-key-mask"></span><span class="theme-card-preview-key-tint"></span></span>
             <span class="theme-card-preview-key theme-card-preview-return" style="--theme-card-key-bg:${escapeAttr(accentBg)}"><span class="theme-card-preview-key-mask"></span><span class="theme-card-preview-key-tint"></span></span>
           </div>
+          <span class="theme-card-title">${escapeHtml(theme.name)}</span>
+          <span class="theme-card-meta">${escapeHtml(themeCardMetaText(theme))}</span>
         </button>
       `;
-    }).join("");
+  }
+
+  function syncThemeListCountHint(visible) {
+    const hint = el("theme-count-hint");
+    if (!hint) return;
+    const total = (state.themeCatalog || []).length;
+    const filtered = (visible || []).length;
+    hint.textContent = filtered === total ? `${total} 个主题` : `匹配 ${filtered} / ${total} 个主题`;
+  }
+
+  function renderThemeList() {
+    const root = el("theme-list");
+    if (!root) return;
+    const visible = filterThemeCatalog(state.themeCatalog);
+    syncThemeListCountHint(visible);
+    if (!visible.length) {
+      root.innerHTML = `<div class="list-empty">没有匹配的主题。<button type="button" class="mini-button" data-theme-filter-reset>清除筛选</button></div>`;
+      // 空状态同样要能一键复位 —— 这里必须绑好再 return
+      bindThemeFilterReset(root);
+      return;
+    }
+    const groups = themeSourceOrder(visible);
+    const single = groups.length <= 1;
+    root.innerHTML = groups.map(([source, items]) => `
+      <div class="theme-group" data-theme-group="${escapeAttr(source)}">
+        ${single ? "" : `<div class="theme-group-head"><span>${escapeHtml(themeGroupLabel(source))}</span><span class="theme-group-count">${items.length}</span></div>`}
+        <div class="theme-group-body">${items.map(themeCardHtml).join("")}</div>
+      </div>`).join("");
     requestAnimationFrame(syncThemeCardBlurMaskGeometry);
     root.querySelectorAll(".theme-card").forEach((card) => {
       card.addEventListener("click", () => {
@@ -1151,6 +1269,44 @@
         syncLayoutUiFromState();
       });
     });
+    bindThemeFilterReset(root);
+  }
+
+  function bindThemeFilterReset(root) {
+    const reset = root.querySelector("[data-theme-filter-reset]");
+    if (!reset) return;
+    reset.addEventListener("click", () => {
+      state.themeListFilter = "";
+      state.themeSourceFilter = "all";
+      const input = el("theme-filter");
+      if (input) input.value = "";
+      syncThemeFilterChips();
+      renderThemeList();
+    });
+  }
+
+  function syncThemeFilterChips() {
+    document.querySelectorAll("[data-theme-source]").forEach((chip) => {
+      chip.setAttribute("aria-pressed", String((chip.dataset.themeSource || "all") === (state.themeSourceFilter || "all")));
+    });
+  }
+
+  function bindThemeFilters() {
+    const input = el("theme-filter");
+    if (input) {
+      input.addEventListener("input", () => {
+        state.themeListFilter = input.value || "";
+        renderThemeList();
+      });
+    }
+    document.querySelectorAll("[data-theme-source]").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        state.themeSourceFilter = chip.dataset.themeSource || "all";
+        syncThemeFilterChips();
+        renderThemeList();
+      });
+    });
+    syncThemeFilterChips();
   }
 
   function syncThemeCardBlurMaskGeometry() {
@@ -2268,13 +2424,61 @@
     setStatus("popup-editor-status", popupHasChanges() ? "弹出字符映射已修改" : "", "");
   }
 
+  function syncSymbolJsonHeight() {
+    // 与图标主题/主题/弹出字符 JSON 卡片同款:按主卡片实际高度撑满编辑器,
+    // 上限 85% 视口,超出部分在编辑器内滚动
+    const jsonCard = el("sym-json-card");
+    if (!jsonCard || !jsonCard.open) return;
+    const mainCard = document.querySelector(".symbol-main-card");
+    let referenceCardHeight = Math.round(jsonCard.getBoundingClientRect().height || 0);
+    if (mainCard) {
+      const style = getComputedStyle(mainCard);
+      const border =
+        (Number.parseFloat(style.borderTopWidth || "0") || 0) +
+        (Number.parseFloat(style.borderBottomWidth || "0") || 0);
+      const scrollHeight = Math.round(mainCard.scrollHeight + border);
+      const mainRectHeight = Math.round(mainCard.getBoundingClientRect().height || 0);
+      referenceCardHeight = scrollHeight > 0 ? scrollHeight : (mainRectHeight > 0 ? mainRectHeight : referenceCardHeight);
+      state.lastSymbolJsonCardHeight = referenceCardHeight;
+    }
+    const summary = jsonCard.querySelector("summary");
+    const status = el("sym-json-status");
+    const toolbar = jsonCard.querySelector(".toolbar");
+    const issues = el("sym-json-issues");
+    const cardStyle = getComputedStyle(jsonCard);
+    const cardVerticalPadding =
+      (Number.parseFloat(cardStyle.paddingTop || "0") || 0) +
+      (Number.parseFloat(cardStyle.paddingBottom || "0") || 0);
+    const natural = Math.floor(
+      referenceCardHeight -
+      cardVerticalPadding -
+      (summary?.offsetHeight || 0) -
+      (status?.offsetHeight || 0) -
+      (toolbar?.offsetHeight || 0) -
+      (issues?.offsetHeight || 0) -
+      24
+    );
+    const height = Math.min(Math.max(natural, 320), Math.max(420, Math.round(window.innerHeight * 0.85)));
+    const textarea = el("sym-json");
+    if (textarea) {
+      textarea.style.height = `${height}px`;
+      textarea.style.maxHeight = `${height}px`;
+      textarea.style.minHeight = "260px";
+      textarea.style.width = "100%";
+      textarea.style.overflow = "auto";
+    }
+  }
+
   function setActiveTab(targetId) {
     const buttons = Array.from(document.querySelectorAll(".tabs .tab"));
+    const previousTab = state.activeTab;
     state.activeTab = targetId;
     buttons.forEach((btn) => {
       const active = btn.dataset.tabTarget === targetId;
       btn.classList.toggle("active", active);
       btn.setAttribute("aria-selected", active ? "true" : "false");
+      // roving tabindex:只有当前页签可 Tab 进入,其余用方向键切换
+      btn.setAttribute("tabindex", active ? "0" : "-1");
     });
     document.querySelectorAll("main .panel").forEach((panel) => {
       panel.classList.toggle("active", panel.id === targetId);
@@ -2293,13 +2497,54 @@
       renderIconThemeEditor();
       syncIconThemeJsonFromState();
     }
+    if (targetId === "tab-symbols" && window.F5aSymbolPanel) {
+      window.F5aSymbolPanel.init();
+      hookSymbolPanelRender();
+      window.F5aSymbolPanel.renderOnTabEnter();
+      syncSymbolJsonHeight();
+    }
+    /* 预览区跟着页签换内容：符号面板页签显示符号面板，其余页签显示键盘。
+     * 只在「进入 / 离开」符号页签时重渲染，初始化时 previousTab 与 targetId
+     * 相同故不触发，避免在 state 还没铺好时提前渲染。 */
+    if (targetId === "tab-symbols" || previousTab === "tab-symbols") {
+      syncPreviewPanelTitle(targetId);
+      renderLayoutPreview();
+    }
+  }
+
+  /* 预览面板的标题随内容变：切到符号面板页签时它不再是「布局预览」。 */
+  function syncPreviewPanelTitle(targetId) {
+    const summary = document.querySelector(".keyboard-preview-panel > summary");
+    if (summary) {
+      summary.textContent = targetId === "tab-symbols" ? "符号面板预览" : "布局预览";
+    }
+  }
+
+  // 页签键盘导航:←/→ 移动并激活,Home/End 跳首尾(Tab 语义交给按钮自身)
+  function handleTabKeydown(event, btn) {
+    const buttons = Array.from(document.querySelectorAll(".tabs .tab"));
+    const current = buttons.indexOf(btn);
+    if (current < 0) return;
+    let next = -1;
+    if (event.key === "ArrowRight") next = (current + 1) % buttons.length;
+    else if (event.key === "ArrowLeft") next = (current - 1 + buttons.length) % buttons.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = buttons.length - 1;
+    if (next < 0) return;
+    event.preventDefault();
+    const target = buttons[next];
+    setActiveTab(target.dataset.tabTarget || "tab-layout");
+    if (typeof target.focus === "function") target.focus();
   }
 
   function initTabs() {
     const buttons = Array.from(document.querySelectorAll(".tabs .tab"));
     buttons.forEach((btn) => {
       btn.addEventListener("click", () => setActiveTab(btn.dataset.tabTarget || "tab-layout"));
+      btn.addEventListener("keydown", (event) => handleTabKeydown(event, btn));
     });
+    bindThemeFilters();
+    bindIconThemeFilter();
     setActiveTab(state.activeTab || "tab-layout");
   }
 
@@ -2487,9 +2732,132 @@
     syncArgbInputFromInlinePicker(input);
   }
 
+
+  // ====== 随机主题(与输入法 ThemeRandomizer 同源)======
+  const RANDOM_THEME_NAME = "随机主题";
+
+  function randomThemeApi() {
+    return (typeof window !== "undefined" && window.F5aRandomTheme) || null;
+  }
+
+  function randomThemeScoreText(score) {
+    return `美学评分 ${score.total}/100(对比度 ${score.contrast}、色相 ${score.hue}、饱和 ${score.sat}、明度 ${score.light})`;
+  }
+
+  // 配色方案:把候选的 28 个网站色按用途分组展示
+  function randomThemePaletteHtml(candidate) {
+    const colors = candidate.colors || {};
+    const groups = [
+      ["键区", ["keyBackground", "keyPressed", "keyBorderStroke", "keyText"]],
+      ["功能键", ["specialKeyBackground", "specialKeyPressed", "specialKeyBorderStroke", "specialKeyText"]],
+      ["强调键", ["accentKeyBackground", "accentKeyPressed", "accentKeyBorderStroke", "accentKeyText"]],
+      ["候选栏", ["panel.background", "panel.candidateBackground", "panel.candidateText", "panel.candidateIndex", "panel.candidateDivider"]],
+      ["工具栏", ["panel.toolbarText", "panel.toolbarActived", "panel.toolbarIcon", "panel.toolbarPressed"]],
+      ["剪贴板", ["pinner.background", "pinner.textColor", "pinner.secondaryTextColor"]],
+      ["其它", ["background", "altText", "toastBackground", "toastText"]]
+    ];
+    return groups.map(([title, keys]) => {
+      const cells = keys.filter((k) => colors[k]).map((k) => `<span class="random-swatch" title="${k} ${colors[k]}"><i style="background:${colors[k]}"></i></span>`).join("");
+      return `<div class="random-palette-group"><span class="random-palette-title">${title}</span><div class="random-palette-cells">${cells}</div></div>`;
+    }).join("");
+  }
+
+  function renderRandomTheme() {
+    const scoreNode = el("random-theme-score");
+    const paletteNode = el("random-theme-palette");
+    const result = state.randomTheme;
+    if (!result) {
+      if (scoreNode) { scoreNode.hidden = true; scoreNode.textContent = ""; }
+      if (paletteNode) paletteNode.innerHTML = "";
+      const copy = el("random-theme-copy");
+      if (copy) copy.disabled = true;
+      return;
+    }
+    const copy = el("random-theme-copy");
+    if (copy) copy.disabled = false;
+    if (scoreNode) {
+      scoreNode.hidden = false;
+      scoreNode.textContent = randomThemeScoreText(result.score) + ` · ${result.candidate.scheme} · ${result.candidate.isDark ? "深色" : "浅色"} · ${result.candidate.surfaceStyle} · ${result.attempts} 次尝试`;
+    }
+    if (paletteNode) paletteNode.innerHTML = randomThemePaletteHtml(result.candidate);
+  }
+
+  function generateRandomTheme() {
+    const api = randomThemeApi();
+    if (!api) {
+      setStatus("random-theme-status", "随机主题模块未加载(js/random-theme.js)", "err");
+      return;
+    }
+    const result = api.generateBestRandomTheme(api.createBrowserRandom(), RANDOM_THEME_NAME);
+    state.randomTheme = result;
+    const theme = result.theme;
+    const entry = {
+      id: "random-theme-slot",
+      name: RANDOM_THEME_NAME,
+      builtin: false,
+      isDark: !!theme.isDark,
+      colors: normalizeThemeColors(deepClone(theme.colors || {})),
+      backgroundImage: "",
+      backgroundImageObject: null,
+      randomSlot: true
+    };
+    const at = state.themeCatalog.findIndex((item) => item.id === entry.id);
+    if (at >= 0) state.themeCatalog[at] = entry;
+    else state.themeCatalog.unshift(entry);
+    state.selectedThemeId = entry.id;
+    renderThemeList();
+    renderThemeEditor();
+    renderRandomTheme();
+    syncThemeJsonFromState();
+    syncLayoutUiFromState();
+    setStatus("random-theme-status", `已生成:${randomThemeScoreText(result.score)}`, "ok");
+  }
+
+  function copyRandomThemeAsCustom() {
+    const result = state.randomTheme;
+    if (!result) return;
+    const suggested = "";
+    let name = prompt("输入自定义主题名称", suggested);
+    if (name == null) return;
+    name = String(name).trim();
+    if (!name) {
+      setStatus("random-theme-status", "主题名不能为空", "err");
+      return;
+    }
+    if (name === RANDOM_THEME_NAME) {
+      setStatus("random-theme-status", "「随机主题」是保留名称,请换一个", "err");
+      return;
+    }
+    if (state.themeCatalog.some((item) => item.name === name)) {
+      setStatus("random-theme-status", "已有同名主题,请换一个", "err");
+      return;
+    }
+    const custom = {
+      id: `custom-${Math.random().toString(36).slice(2, 10)}`,
+      name,
+      builtin: false,
+      isDark: !!result.theme.isDark,
+      colors: normalizeThemeColors(deepClone(result.theme.colors || {})),
+      backgroundImage: "",
+      backgroundImageObject: null
+    };
+    syncThemeBackgroundPathsWithName(custom);
+    state.themeCatalog.unshift(custom);
+    state.selectedThemeId = custom.id;
+    renderThemeList();
+    renderThemeEditor();
+    syncThemeJsonFromState();
+    syncLayoutUiFromState();
+    setStatus("random-theme-status", `已复制为自定义主题:${name}`, "ok");
+  }
   function initThemeTab() {
     const list = el("theme-list");
     if (!list) return;
+    const rtGen = el("random-theme-generate");
+    if (rtGen) rtGen.addEventListener("click", generateRandomTheme);
+    const rtCopy = el("random-theme-copy");
+    if (rtCopy) rtCopy.addEventListener("click", copyRandomThemeAsCustom);
+    renderRandomTheme();
     el("theme-create-from-current").addEventListener("click", () => {
       const source = currentThemeEntry();
       const custom = {
@@ -2632,10 +3000,18 @@
       try {
         const fileName = String(file.name || "").toLowerCase();
         const isZip = file.type === "application/zip" || fileName.endsWith(".zip");
+        const isJson = file.type === "application/json" || fileName.endsWith(".json");
         if (isZip) {
           const themeData = await decodeThemeFromZipFile(file);
           const imported = addImportedThemeEntry(themeData, "已导入主题 ZIP");
           setStatus("theme-qr-meta", `ZIP 导入成功：${imported.name}`, "ok");
+        } else if (isJson) {
+          const text = await file.text();
+          let parsed;
+          try { parsed = JSON.parse(text); } catch (_) { throw new Error("不是有效的主题 JSON 文件"); }
+          const themeData = normalizeImportedThemePayload(parsed);
+          const imported = addImportedThemeEntry(themeData, "已导入主题 JSON");
+          setStatus("theme-qr-meta", `JSON 导入成功：${imported.name}`, "ok");
         } else {
           await importThemeFromQrLongImage(file);
         }
@@ -3950,6 +4326,111 @@
     updateFixedChromeMetrics();
   }
 
+  /* ── 符号面板预览（对照 foxy-editor 的 js/symbol-preview.js）────────────
+   * 符号 / emoji / 颜文字三类 catalog 在 App 里**不是弹层**，而是一块整屏
+   * 替换键盘的横排面板。编辑符号时看不到它长什么样，很难判断格子密度、
+   * 分组名长度、multiLine 是否合适 —— 所以切到「符号面板」页签时，把预览区
+   * 从键盘换成这块面板。
+   *
+   * 几何与配色全部由 js/symbol-preview.js 负责（规格来自 App 反编译，
+   * 权威依据见 foxy/foxy-render-spec.md §8）。这里只做三件事：
+   *   ① 复用 f5a 现有的预览尺寸解析取宽高（与布局预览严格同一个盒子）；
+   *   ② 把主题 token 与「面板底 / 是否画描边」注入进去；
+   *   ③ 把说明文字放进预览面板的状态行（不画进预览区 —— 那里只该有
+   *      「手机的样貌」，文字会把盒子撑高，也会挡住用户想看的观感）。
+   */
+  function symbolPreviewThemeField(field) {
+    return argbToCss(resolveThemeTokenColor(field));
+  }
+
+  /* 描边是否画：f5a 的「按键边框」与「边框描边」同时开启才画
+   * （对应 foxy 的 if (m00Var.B && m00Var.C)，ly.java:332-334）。
+   * ⚠️ 必须同时判两个：只看描边的话，一旦用户把键边框关掉，预览仍会画描边，
+   * 与实机不符。 */
+  function symbolPreviewStrokeEnabled() {
+    return !!state.themeAppSync?.borderEnabled && !!state.themeAppSync?.borderOutline;
+  }
+
+  function renderSymbolPanelPreview(root) {
+    root.classList.remove("layout-preview-text-editor", "layout-preview-split");
+    root.classList.add("layout-preview-symbol");
+    const PV = window.F5aSymbolPreview;
+    if (!PV || typeof PV.render !== "function") {
+      root.innerHTML = "";
+      setStatus("layout-preview-meta", "符号面板预览模块未加载（js/symbol-preview.js）", "err");
+      return;
+    }
+    const metrics = resolvePreviewMetrics(false);
+    const renderWidth = resolvePreviewKeyboardWidth(root, metrics, false);
+    const heightScale = resolvePreviewHeightScale(metrics, false);
+    const contentHeight = resolvePreviewContentHeight(getRows(), heightScale, renderWidth, metrics)
+      ?? resolveFallbackContentHeight(renderWidth, false);
+    applyPreviewThemeSurface();
+    /* 符号面板不是键盘：没有顶栏也没有底部安全区，把布局预览给的两段内边距归零，
+     * 面板才与键盘画布同宽（与 renderTextEditorPreview 同法）。 */
+    root.style.setProperty("--preview-top-bar-height", "0px");
+    root.style.setProperty("--preview-bottom-padding", "0px");
+    /* 容器宽度交给 pinPreviewContainerWidth：全局 box-sizing: border-box，
+     * 直接写 width 会把左右 padding 吃掉，面板会比键盘预览窄一圈。 */
+    root.style.setProperty("--preview-keyboard-max-width", renderWidth + "px");
+    /* unit = 键盘宽 / 10（与键盘预览同尺度）—— 面板格子与键盘按键的物理
+     * 大小才可比，这也是「1dp ≈ unit/36」的由来。 */
+    const result = PV.render(root, {
+      unit: renderWidth / 10,
+      width: renderWidth,
+      height: contentHeight,
+      theme: symbolPreviewThemeField,
+      surface: resolvePreviewSurfaceColor,
+      strokeEnabled: symbolPreviewStrokeEnabled,
+    });
+    /* 说明文字放面板下方（不画进预览区、也不压在面板上）。 */
+    const metaEl = el("layout-preview-meta");
+    if (metaEl) metaEl.hidden = true;
+    const notesEl = el("symbol-preview-notes");
+    if (notesEl) {
+      notesEl.textContent = "";
+      if (!result) {
+        notesEl.hidden = false;
+        const tip = document.createElement("div");
+        tip.className = "sym-pv-note";
+        tip.textContent = "当前类别还没有分组，先在下方新建分组，或点「重置为内置」载入内置目录。";
+        notesEl.appendChild(tip);
+      } else {
+        notesEl.hidden = false;
+        result.notes.forEach((line) => {
+          const note = document.createElement("div");
+          note.className = "sym-pv-note";
+          /* 含用户可控的分组名 —— 只能走 textContent。 */
+          note.textContent = line;
+          notesEl.appendChild(note);
+        });
+      }
+    }
+    requestAnimationFrame(pinPreviewContainerWidth);
+  }
+
+  /* 离开符号页签：把说明收起来、把 meta 还给键盘预览。 */
+  function leaveSymbolPanelPreview() {
+    const notesEl = el("symbol-preview-notes");
+    if (notesEl) { notesEl.hidden = true; notesEl.textContent = ""; }
+    const metaEl = el("layout-preview-meta");
+    if (metaEl) metaEl.hidden = false;
+  }
+
+  /* 符号数据一改（切类别、改 multiLine、增删分组、导入、重置），预览要跟着变。
+   * 包一层 SP.render：符号面板自己的每个改动路径都会走它，不必逐个去接。 */
+  function hookSymbolPanelRender() {
+    const SP = window.F5aSymbolPanel;
+    if (!SP || typeof SP.render !== "function" || SP.__previewHooked) return;
+    const original = SP.render;
+    SP.render = function () {
+      const out = original.apply(this, arguments);
+      if (state.activeTab === "tab-symbols") renderLayoutPreview();
+      return out;
+    };
+    SP.__previewHooked = true;
+  }
+
   function renderLayoutPreview() {
     scheduleHistoryCommit();
     const root = el("layout-preview");
@@ -3958,6 +4439,9 @@
     root.classList.toggle("layout-preview-text-editor", textEditor);
     root.classList.toggle("layout-preview-split", !textEditor && !!state.previewSplit);
     syncPreviewToolbarUi();
+    if (state.activeTab === "tab-symbols") { renderSymbolPanelPreview(root); return; }
+    root.classList.remove("layout-preview-symbol");
+    leaveSymbolPanelPreview();
     if (textEditor) { renderTextEditorPreview(root); return; }
     const previewSplit = !!state.previewSplit;
     const rows = previewSplit && !state.editingSplit
@@ -9832,7 +10316,7 @@
   }
 
   function renderIconThemeSlotPreviewHtml(slot, value, themeName) {
-    if (!value) return `<span style="color:var(--sub);font-size:11px;">--</span>`;
+    if (!value) return `<span style="color:var(--text-dim);font-size:11px;">--</span>`;
     if (isLocalIconRef(value)) {
       return `<img src="${escapeAttr(value)}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;" data-slot-preview="${escapeAttr(slot)}">`;
     }
@@ -9856,7 +10340,7 @@
     if (isInlineXmlDrawableValue(value)) {
       const svg = vectorDrawableToSvg(value);
       if (svg) return renderSvgPreviewHtml(svg);
-      return `<span style="font-size:10px;color:var(--primary);">XML</span>`;
+      return `<span style="font-size:10px;color:var(--accent);">XML</span>`;
     }
     return `<span style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(value.substring(0, 4))}</span>`;
   }
@@ -9886,26 +10370,49 @@
     const svgSlots = iconThemeSlotsAll.filter((slot) => isInlineSvgValue(icons[slot]));
     const pngSlots = iconThemeSlotsAll.filter((slot) => isFileIconRef(icons[slot]) || isLocalIconRef(icons[slot]));
     const chosen = [...svgSlots, ...pngSlots].slice(0, 4);
-    if (!chosen.length) return `<span style="color:var(--sub);font-size:11px;">无图标</span>`;
+    if (!chosen.length) return `<span style="color:var(--text-dim);font-size:11px;">无图标</span>`;
     return chosen.map((slot) => {
       const v = icons[slot];
       if (isInlineSvgValue(v)) return `<div class="icon-theme-card-preview-cell" title="${escapeAttr(slot)}">${renderSvgPreviewHtml(v)}</div>`;
       if (isFileIconRef(v) || isLocalIconRef(v)) return `<div class="icon-theme-card-preview-cell" title="${escapeAttr(slot)}"><span style="color:var(--ok);font-size:11px;">PNG</span></div>`;
-      return `<div class="icon-theme-card-preview-cell" title="${escapeAttr(slot)}"><span style="color:var(--primary);font-size:11px;">✦</span></div>`;
+      return `<div class="icon-theme-card-preview-cell" title="${escapeAttr(slot)}"><span style="color:var(--accent);font-size:11px;">✦</span></div>`;
     }).join("");
+  }
+
+  function filterIconThemeCatalog(catalog) {
+    const query = String(state.iconThemeListFilter || "").trim().toLowerCase();
+    return (catalog || []).filter((theme) => {
+      if (!query) return true;
+      const source = theme.builtin ? (String(theme.id).indexOf("app-icon-") === 0 ? "输入法内置" : "编辑器自带") : "自定义";
+      return (String(theme.name || "") + " " + source).toLowerCase().indexOf(query) >= 0;
+    });
   }
 
   function renderIconThemeList() {
     const root = el("icon-theme-list");
     if (!root) return;
-    root.innerHTML = state.iconThemeCatalog.map((theme) => {
+    const visible = filterIconThemeCatalog(state.iconThemeCatalog);
+    const hint = el("icon-theme-count-hint");
+    if (hint) {
+      const total = (state.iconThemeCatalog || []).length;
+      hint.textContent = visible.length === total ? `${total} 个图标主题` : `匹配 ${visible.length} / ${total} 个图标主题`;
+    }
+    if (!visible.length) {
+      root.innerHTML = `<div class="list-empty">没有匹配的图标主题。<button type="button" class="mini-button" data-icon-filter-reset>清除筛选</button></div>`;
+      bindIconThemeFilterReset(root);
+      updateIconThemeManageButtons(isCurrentIconThemeEditable());
+      return;
+    }
+    root.innerHTML = visible.map((theme) => {
       const customCount = Object.keys(theme.icons || {}).filter((k) => (theme.icons[k] || "").trim()).length;
       const isBuiltin = !!theme.builtin;
+      const isApp = String(theme.id).indexOf("app-icon-") === 0;
       const isActive = theme.id === state.selectedIconThemeId;
-      return `<button type="button" class="icon-theme-card ${isActive ? "active" : ""}" data-icon-theme-id="${escapeAttr(theme.id)}">
+      const sourceLabel = isApp ? "输入法内置" : (isBuiltin ? "编辑器自带" : "自定义");
+      return `<button type="button" class="icon-theme-card ${isActive ? "active" : ""}" data-icon-theme-id="${escapeAttr(theme.id)}" title="${escapeAttr(theme.name)}">
         <div class="icon-theme-card-preview">${buildIconThemeThumbnailHtml(theme.icons || {})}</div>
         <div class="icon-theme-card-name">${escapeHtml(theme.name)}</div>
-        <div class="icon-theme-card-count">${customCount} 个自定义图标${isBuiltin ? " · 内置" : ""}</div>
+        <div class="icon-theme-card-count">${sourceLabel} · ${customCount} 个自定义图标</div>
       </button>`;
     }).join("");
     root.querySelectorAll(".icon-theme-card").forEach((card) => {
@@ -9917,8 +10424,30 @@
         syncIconThemeJsonFromState();
       });
     });
+    bindIconThemeFilterReset(root);
     updateIconThemeManageButtons(isCurrentIconThemeEditable());
   }
+
+  function bindIconThemeFilterReset(root) {
+    const reset = root.querySelector("[data-icon-filter-reset]");
+    if (!reset) return;
+    reset.addEventListener("click", () => {
+      state.iconThemeListFilter = "";
+      const input = el("icon-theme-filter");
+      if (input) input.value = "";
+      renderIconThemeList();
+    });
+  }
+
+  function bindIconThemeFilter() {
+    const input = el("icon-theme-filter");
+    if (!input) return;
+    input.addEventListener("input", () => {
+      state.iconThemeListFilter = input.value || "";
+      renderIconThemeList();
+    });
+  }
+
 
   function renderIconThemeSlots() {
     const root = el("icon-theme-slots");
@@ -10120,7 +10649,7 @@
     if (customPreview) {
       const url = resolveIconSlotDisplayUrl(theme.name, slot, currentValue);
       if (!currentValue) {
-        customPreview.innerHTML = `<span style="color:var(--sub);font-size:11px;">空</span>`;
+        customPreview.innerHTML = `<span style="color:var(--text-dim);font-size:11px;">空</span>`;
       } else if (url && !url.startsWith("svg:")) {
         customPreview.innerHTML = `<img src="${escapeAttr(url)}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;">`;
       } else if (url && url.startsWith("svg:")) {

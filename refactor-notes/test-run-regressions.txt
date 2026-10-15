@@ -1,0 +1,56 @@
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ 快速修改 C 后撤销到 B、重做到 C；草稿始终保存当前状态 (35.2281ms)
+✔ 重做前的新修改清理旧分叉，同一事件多次同步只记录一次 (12.72ms)
+✔ 主题设置和图标缩略图支持撤销、草稿恢复，兼容旧草稿 (13.6147ms)
+✔ 占位键保留分体断点，切换类型默认无文字且完全透明 (9.3543ms)
+✔ 辅助栏保存保留合法高度，纵向预览使用 70/30 比例 (9.211ms)
+✔ 辅助栏删除按钮使用注入的删除函数 (8.9804ms)
+✔ 外部 SVG 只进入 img 的 data URL，原文不插入页面 DOM (7.0806ms)
+✔ 独立 SVG 预览兼容简写命名空间和亮暗文字颜色，保留显式颜色 (9.7497ms)
+✔ 合成态覆盖不改变普通预览主文字的主题颜色 (6.7488ms)
+✔ 存储配额不足时保留上一份完整草稿，并显示失败 (9.828ms)
+✔ 恢复图片草稿用稳定 ID 读取字节并重建当前页面 URL (16.2804ms)
+✔ 图片存储不可用、超限时报告明确失败而非伪装成功 (30.2531ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ 普通与分体共用辅助栏，编辑分体不写入变体辅助栏或改动高度 (7.6163ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ 方案 ID 和显示名按原始磁盘键保留，仅有分体排列也可选择 (13.2635ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ 分体侧栏和主键采用扣除中缝的同一宽度基准，包括桥接空格行 (9.0124ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ 合成预览替换文字与动作，保持尺寸、基础颜色；开关不改变文档历史 (8.8519ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ 合成预览独立颜色使用覆盖设置，外观类型仍沿用基础键，辅助栏同样切换 (8.4732ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ 布局归一化往返保留方案键、分体排列与共用辅助栏 (7.8202ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ 预览按完整画布固定宽度，辅助栏不能缩窄整个键盘；分体百分比位于共用父级 (7.4247ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ text_editor 总高跟随设备，底栏固定 46dp，窄屏同比缩放并保底 120dp (7.4266ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ text_editor 多行共用固定底栏，权重最小 0.5，过滤无动作宏后点击保留原下标 (8.3401ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ text_editor 采用主题按钮与不透明触控板，忽略合成覆盖和逐键颜色 (7.5329ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ text_editor 空布局显示默认六键，未知类型按 App 回退空格，不写入布局 (9.544ms)
+[web-editor] app.js loaded 2026-10-07T00:00+08:00
+✔ text_editor 编辑与预览始终读取普通 default，不写入未使用的分体或方案排列 (7.6985ms)
+ℹ tests 24
+ℹ suites 0
+ℹ pass 24
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 279.3734

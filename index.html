@@ -57,6 +57,7 @@
         <div class="preview-center">
           <div id="layout-preview" class="layout-preview"></div>
           <div id="layout-preview-meta" class="status"></div>
+          <div id="symbol-preview-notes" class="sym-pv-notes" hidden></div>
         </div>
         <div id="theme-preview-extra-right" class="theme-preview-extra-side"></div>
       </div>
@@ -66,15 +67,17 @@
       </details>
     </details>
 
-    <div class="tabs" role="tablist" aria-label="编辑器功能">
-      <button type="button" class="tab active" data-tab-target="tab-layout" aria-controls="tab-layout" aria-selected="true">布局编辑</button>
-      <button type="button" class="tab" data-tab-target="tab-theme" aria-controls="tab-theme" aria-selected="false">主题编辑</button>
-      <button type="button" class="tab" data-tab-target="tab-popup" aria-controls="tab-popup" aria-selected="false">弹出字符</button>
-      <button type="button" class="tab" data-tab-target="tab-icon-theme" aria-controls="tab-icon-theme" aria-selected="false">图标主题</button>
+    <div class="tabs" role="tablist" aria-label="编辑器功能" data-tab-nav>
+      <button type="button" class="tab active" role="tab" id="tabbtn-layout" data-tab-target="tab-layout" aria-controls="tab-layout" aria-selected="true" tabindex="0">布局编辑</button>
+      <button type="button" class="tab" role="tab" id="tabbtn-theme" data-tab-target="tab-theme" aria-controls="tab-theme" aria-selected="false" tabindex="-1">主题编辑</button>
+      <button type="button" class="tab" role="tab" id="tabbtn-popup" data-tab-target="tab-popup" aria-controls="tab-popup" aria-selected="false" tabindex="-1">弹出字符</button>
+      <button type="button" class="tab" role="tab" id="tabbtn-icon-theme" data-tab-target="tab-icon-theme" aria-controls="tab-icon-theme" aria-selected="false" tabindex="-1">图标主题</button>
+      <button type="button" class="tab" role="tab" id="tabbtn-symbols" data-tab-target="tab-symbols" aria-controls="tab-symbols" aria-selected="false" tabindex="-1">符号面板</button>
     </div>
+
     <div id="draft-save-status" class="status draft-save-status" role="status"></div>
 
-    <section class="panel active" id="tab-layout" role="tabpanel">
+    <section class="panel active" id="tab-layout" role="tabpanel" aria-labelledby="tabbtn-layout" tabindex="0">
       <div class="layout-workbench">
         <div class="card layout-main-column-card" id="layout-main-column-card">
           <div class="layout-main-column">
@@ -85,7 +88,7 @@
                   <select id="layout-base-select" aria-label="布局"></select>
                   <select id="layout-submode-select" aria-label="子模式"></select>
                   <button id="layout-add-layout" class="icon-button" title="新增">+</button>
-                  <button id="layout-delete-layout" class="icon-button" title="删除当前布局">🗑</button>
+                  <button id="layout-delete-layout" class="icon-button danger" title="删除当前布局">🗑</button>
                 </div>
                 <div class="form-row form-inline" id="layout-split-mode-row">
                   <label><input type="checkbox" id="layout-split-mode"> 分体键盘布局（编辑当前方案的 __variant__:split 排列，未配置时从当前排列复制）</label>
@@ -137,7 +140,7 @@
                 </div>
                 <div class="toolbar">
                   <button id="layout-ime-load">从 IME 读取</button>
-                  <button id="layout-ime-save">保存到 IME</button>
+                  <button id="layout-ime-save" class="primary" title="把当前布局写入输入法">保存到 IME</button>
                   <button id="layout-share-current">分享布局</button>
                   <button id="layout-import-qr-image">导入二维码</button>
                   <input id="layout-import-qr-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
@@ -165,25 +168,47 @@
       </div>
     </section>
 
-    <section class="panel" id="tab-theme" role="tabpanel">
+    <section class="panel" id="tab-theme" role="tabpanel" aria-labelledby="tabbtn-theme" tabindex="0">
       <div class="layout-workbench theme-workbench">
         <details class="card theme-main-card" open>
           <summary>主题管理与编辑</summary>
           <div class="toolbar details-toolbar">
             <button id="theme-ime-load" type="button">从 IME 读取</button>
-            <button id="theme-ime-save" type="button">保存到 IME</button>
+            <button id="theme-ime-save" class="primary" type="button" title="把当前主题写入输入法">保存到 IME</button>
             <button id="theme-export-json" type="button">导出JSON</button>
             <button id="theme-share-current" type="button">分享主题</button>
             <button id="theme-import-shared" type="button">导入主题</button>
             <button id="theme-create-from-current" type="button">复制主题</button>
             <button id="theme-rename-custom" type="button">主题改名</button>
-            <button id="theme-delete-custom" type="button">删除主题</button>
+            <button id="theme-delete-custom" class="danger" type="button" title="删除当前选中的主题,需确认">删除当前主题</button>
             <button id="theme-import-background" type="button">修改背景</button>
             <button id="theme-clear-background" type="button">清除背景</button>
             <input id="theme-import-background-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-            <input id="theme-import-file" type="file" accept="application/zip,.zip,image/png,image/jpeg,image/webp" hidden>
+            <input id="theme-import-file" type="file" accept="application/json,.json,application/zip,.zip,image/png,image/jpeg,image/webp" hidden>
           </div>
           <div id="theme-qr-meta" class="status"></div>
+          <details class="card" id="random-theme-card">
+            <summary>随机主题</summary>
+            <div class="random-theme-editor">
+              <div class="toolbar details-toolbar">
+                <button id="random-theme-generate" class="primary" type="button" title="按输入法同源算法生成一套配色">生成随机主题</button>
+                <button id="random-theme-copy" type="button" title="把当前随机主题另存为自定义主题">复制为自定义主题</button>
+              </div>
+              <div id="random-theme-score" class="random-theme-score" hidden></div>
+              <div id="random-theme-palette" class="random-theme-palette"></div>
+              <div id="random-theme-status" class="status"></div>
+            </div>
+          </details>
+          <div class="list-toolbar">
+            <input id="theme-filter" class="mini-input" type="search" placeholder="按名称筛主题,如 dark / 长日" aria-label="筛选主题">
+            <div class="chip-group" role="group" aria-label="主题来源筛选">
+              <button type="button" class="chip" data-theme-source="all" aria-pressed="true">全部</button>
+              <button type="button" class="chip" data-theme-source="app" aria-pressed="false">输入法内置</button>
+              <button type="button" class="chip" data-theme-source="local" aria-pressed="false">编辑器自带</button>
+              <button type="button" class="chip" data-theme-source="custom" aria-pressed="false">自定义</button>
+            </div>
+            <span id="theme-count-hint" class="list-count"></span>
+          </div>
           <div id="theme-list" class="theme-list"></div>
           <details class="card" id="theme-background-card" open>
             <summary>图片主题</summary>
@@ -277,13 +302,13 @@
       </div>
     </section>
 
-    <section class="panel" id="tab-popup" role="tabpanel">
+    <section class="panel" id="tab-popup" role="tabpanel" aria-labelledby="tabbtn-popup" tabindex="0">
       <div class="layout-workbench popup-workbench">
         <details class="card popup-main-card" open>
           <summary>弹出字符编辑</summary>
           <div class="toolbar details-toolbar">
             <button id="popup-ime-load" type="button">从 IME 读取</button>
-            <button id="popup-ime-save" type="button">保存到 IME</button>
+            <button id="popup-ime-save" class="primary" type="button" title="把弹出字符映射写入输入法">保存到 IME</button>
             <button id="popup-add-mapping" type="button">新增映射</button>
             <button id="popup-export-json" type="button">导出 JSON</button>
             <button id="popup-import-json" type="button">导入 JSON</button>
@@ -314,13 +339,13 @@
       </div>
     </section>
 
-    <section class="panel" id="tab-icon-theme" role="tabpanel">
+    <section class="panel" id="tab-icon-theme" role="tabpanel" aria-labelledby="tabbtn-icon-theme" tabindex="0">
       <div class="layout-workbench icon-theme-workbench">
         <details class="card icon-theme-main-card" open>
           <summary>图标主题管理与编辑</summary>
           <div class="toolbar details-toolbar">
             <button id="icon-theme-ime-load" type="button">从 IME 读取</button>
-            <button id="icon-theme-ime-save" type="button">保存到 IME</button>
+            <button id="icon-theme-ime-save" class="primary" type="button" title="把当前图标主题写入输入法">保存到 IME</button>
             <button id="icon-theme-create-new" type="button">新建主题</button>
             <button id="icon-theme-export-json" type="button">导出 JSON</button>
             <button id="icon-theme-export-zip" type="button">导出 ZIP</button>
@@ -329,12 +354,16 @@
             <button id="icon-theme-generate-qr" type="button">生成二维码</button>
             <button id="icon-theme-import-qr-image" type="button">导入二维码</button>
             <button id="icon-theme-rename" type="button">改名</button>
-            <button id="icon-theme-delete" type="button">删除</button>
+            <button id="icon-theme-delete" class="danger" type="button" title="删除当前选中的图标主题,需确认">删除当前图标主题</button>
             <input id="icon-theme-import-file" type="file" accept="application/json,.json,application/zip,.zip,image/png,image/jpeg,image/webp" hidden>
             <input id="icon-theme-import-json-file" type="file" accept="application/json,.json" hidden>
             <input id="icon-theme-import-qr-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
           </div>
           <div id="icon-theme-qr-meta" class="status"></div>
+          <div class="list-toolbar">
+            <input id="icon-theme-filter" class="mini-input" type="search" placeholder="按名称筛图标主题" aria-label="筛选图标主题">
+            <span id="icon-theme-count-hint" class="list-count"></span>
+          </div>
           <div id="icon-theme-list" class="theme-list"></div>
           <div id="icon-theme-editor-status" class="status"></div>
           <div id="icon-theme-slots" class="icon-theme-slots"></div>
@@ -352,6 +381,55 @@
             </div>
             <textarea id="icon-theme-json" class="json-editor"></textarea>
             <div id="icon-theme-json-status" class="status"></div>
+          </div>
+        </details>
+      </div>
+    </section>
+    <section class="panel" id="tab-symbols" role="tabpanel" aria-labelledby="tabbtn-symbols" tabindex="0">
+      <div class="layout-workbench symbol-workbench">
+        <details class="card symbol-main-card" open>
+          <summary>符号 / Emoji / 颜文字面板</summary>
+          <div class="symbol-toolbar">
+            <label for="sym-kind">类别</label>
+            <select id="sym-kind" class="mini-select">
+              <option value="symbols">符号</option>
+              <option value="emoji">Emoji</option>
+              <option value="kaomoji">颜文字</option>
+            </select>
+            <label class="inline-check"><input id="sym-multiline" type="checkbox"> 每行 1 格(颜文字等长条目)</label>
+            <span id="sym-source-hint" class="status-inline"></span>
+          </div>
+          <div class="toolbar details-toolbar">
+            <button id="sym-import-json" type="button">导入 JSON</button>
+            <button id="sym-export-json" type="button" class="primary">导出 JSON</button>
+            <button id="sym-load-sample" type="button">载入内置样例</button>
+            <button id="sym-reset-builtin" type="button">恢复输入法内置</button>
+            <input id="sym-import-file" type="file" accept="application/json,.json" hidden>
+          </div>
+          <div id="sym-path-hint" class="symbol-path-hint"></div>
+          <div class="symbol-group-toolbar">
+            <input id="sym-filter" class="mini-input" type="search" placeholder="搜索分组名或条目内容">
+            <input id="sym-new-group" class="mini-input" type="text" placeholder="新分组名(中文,必填)">
+            <button id="sym-new-group-add" type="button" class="mini-button">+ 新建分组</button>
+            <span id="sym-count-hint" class="status-inline"></span>
+          </div>
+          <div id="sym-entry-ops" class="symbol-entry-ops"></div>
+          <div id="sym-list" class="symbol-group-list"></div>
+          <div id="symbol-panel-status" class="status"></div>
+        </details>
+
+        <details class="card json-card" id="sym-json-card" open>
+          <summary>符号面板 JSON</summary>
+          <div class="json-card-body">
+            <div id="sym-json-issues" class="json-issues"></div>
+            <div class="toolbar">
+              <button id="sym-json-check" type="button">检查</button>
+              <button id="sym-json-format" type="button">格式化并应用</button>
+              <button id="sym-json-copy" type="button">复制</button>
+              <button id="sym-json-apply" type="button">应用到界面</button>
+            </div>
+            <textarea id="sym-json" class="json-editor" spellcheck="false"></textarea>
+            <div id="sym-json-status" class="status"></div>
           </div>
         </details>
       </div>
@@ -391,9 +469,9 @@
         <select id="layout-add-source"></select>
       </div>
       <div class="status" id="layout-add-status"></div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="layout-add-dialog-cancel">取消</button>
-        <button type="button" id="layout-add-dialog-save">添加</button>
+        <button type="button" id="layout-add-dialog-save" class="primary">添加</button>
       </div>
     </form>
   </dialog>
@@ -473,11 +551,11 @@
         <div id="layout-key-compose-summary" class="status"></div>
       </div>
       <div class="status" id="layout-key-dialog-status"></div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="layout-key-cancel">取消</button>
-        <button type="button" id="layout-key-save">保存</button>
+        <button type="button" id="layout-key-save" class="primary">保存</button>
         <button type="button" id="layout-key-compose-clear" hidden>清除合成按键</button>
-        <button type="button" id="layout-key-delete" title="删除按键">删除按键</button>
+        <button type="button" id="layout-key-delete" class="danger" title="删除按键">删除按键</button>
       </div>
     </form>
   </dialog>
@@ -500,9 +578,9 @@
         <div id="layout-key-display-map-rows"></div>
         <div class="toolbar"><button type="button" id="layout-key-display-map-add">添加模式</button></div>
       </div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="layout-key-display-cancel">取消</button>
-        <button type="button" id="layout-key-display-save">保存</button>
+        <button type="button" id="layout-key-display-save" class="primary">保存</button>
       </div>
     </form>
   </dialog>
@@ -530,9 +608,9 @@
         <label>长按标签</label>
         <input id="layout-key-labels-long-press" type="text">
       </div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="layout-key-labels-cancel">取消</button>
-        <button type="button" id="layout-key-labels-save">保存</button>
+        <button type="button" id="layout-key-labels-save" class="primary">保存</button>
       </div>
     </form>
   </dialog>
@@ -575,9 +653,9 @@
         </div>
         <div id="layout-key-macro-long-press-summary" class="status"></div>
       </div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="layout-key-macro-cancel">取消</button>
-        <button type="button" id="layout-key-macro-save">保存</button>
+        <button type="button" id="layout-key-macro-save" class="primary">保存</button>
       </div>
     </form>
   </dialog>
@@ -586,9 +664,9 @@
     <form method="dialog" class="editor-form">
       <div class="dialog-titlebar"><h3>按键颜色</h3></div>
       <div id="layout-key-colors-rows"></div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="layout-key-colors-cancel">取消</button>
-        <button type="button" id="layout-key-colors-save">保存</button>
+        <button type="button" id="layout-key-colors-save" class="primary">保存</button>
       </div>
     </form>
   </dialog>
@@ -602,9 +680,9 @@
         <button type="button" id="layout-gradient-anchor-add">+ 添加锚点</button>
       </div>
       <div id="layout-gradient-status" class="status"></div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="layout-gradient-cancel">取消</button>
-        <button type="button" id="layout-gradient-apply">应用二维渐变</button>
+        <button type="button" id="layout-gradient-apply" class="primary">应用二维渐变</button>
       </div>
     </form>
   </dialog>
@@ -613,9 +691,9 @@
     <form method="dialog" class="editor-form">
       <div class="dialog-titlebar"><h3>清除按键颜色</h3></div>
       <div class="status">将清除当前布局中全部按键的颜色覆盖，包括合成中按键的独立颜色。此操作不会删除按键、标签或事件。</div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="layout-clear-colors-cancel">取消</button>
-        <button type="button" id="layout-clear-colors-confirm">清除</button>
+        <button type="button" id="layout-clear-colors-confirm" class="danger">清除</button>
       </div>
     </form>
   </dialog>
@@ -627,9 +705,9 @@
       <div class="toolbar">
         <button type="button" id="layout-key-macro-event-add-step">+ 添加步骤</button>
       </div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="layout-key-macro-event-cancel">取消</button>
-        <button type="button" id="layout-key-macro-event-save">保存</button>
+        <button type="button" id="layout-key-macro-event-save" class="primary">保存</button>
       </div>
     </form>
   </dialog>
@@ -640,9 +718,9 @@
       <div class="form-row">
         <textarea id="layout-key-json" class="json-editor small"></textarea>
       </div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="layout-key-json-cancel">取消</button>
-        <button type="button" id="layout-key-json-save">保存</button>
+        <button type="button" id="layout-key-json-save" class="primary">保存</button>
       </div>
     </form>
   </dialog>
@@ -668,9 +746,9 @@
         <div id="layout-aux-bar-keys-hint" class="status" hidden>预编辑上方模式：辅助栏内容显示在预编辑区上方，由运行时的候选标签页决定。</div>
       </div>
       <div class="status" id="layout-aux-bar-status"></div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="layout-aux-bar-cancel">取消</button>
-        <button type="button" id="layout-aux-bar-save">保存</button>
+        <button type="button" id="layout-aux-bar-save" class="primary">保存</button>
       </div>
     </form>
   </dialog>
@@ -708,11 +786,11 @@
       </div>
       <div class="toolbar">
         <button id="theme-crop-reset" type="button">重置</button>
-        <button id="theme-crop-clear" type="button">清除裁剪</button>
+        <button id="theme-crop-clear" class="danger" type="button">清除裁剪</button>
       </div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button id="theme-crop-cancel" type="button">取消</button>
-        <button id="theme-crop-apply" type="button">应用裁剪</button>
+        <button id="theme-crop-apply" class="primary" type="button">应用裁剪</button>
       </div>
     </form>
   </dialog>
@@ -769,16 +847,16 @@
       <div class="form-row">
         <button id="icon-slot-select-file" type="button">选择文件 (SVG/PNG/XML)</button>
         <input id="icon-slot-file-input" type="file" accept="image/*,.svg,.xml,text/xml,application/xml" hidden>
-        <button id="icon-slot-clear" type="button">清除</button>
+        <button id="icon-slot-clear" class="danger" type="button">清除</button>
       </div>
       <div id="icon-slot-pasted-svg" class="form-row" hidden>
         <label>粘贴 SVG</label>
         <textarea id="icon-slot-svg-textarea" rows="3" placeholder="直接粘贴 SVG 源码..."></textarea>
       </div>
       <div id="icon-slot-status" class="status"></div>
-      <div class="toolbar">
+      <div class="toolbar dialog-toolbar">
         <button type="button" id="icon-slot-cancel">取消</button>
-        <button type="button" id="icon-slot-save">确认</button>
+        <button type="button" id="icon-slot-save" class="primary">确认</button>
       </div>
     </form>
   </dialog>
@@ -809,6 +887,11 @@
   <script src="./js/jscolor/jscolor.js?v=20260520113600"></script>
   <script src="./js/key-editor-bindings.js?v=20261013010000"></script>
   <script src="./js/draft-assets.js?v=20261013010000"></script>
-  <script src="./js/app.js?v=20261013080000"></script>
+  <script src="./js/builtin-presets.js?v=20261014223000"></script>
+  <script src="./js/symbol-data.js?v=20261014223000"></script>
+  <script src="./js/symbol-panel.js?v=20261014230000"></script>
+  <script src="./js/symbol-preview.js?v=20261015050000"></script>
+  <script src="./js/random-theme.js?v=20261015050000"></script>
+  <script src="./js/app.js?v=20261015050000"></script>
 </body>
 </html>

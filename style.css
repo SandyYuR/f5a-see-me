@@ -8,46 +8,109 @@ details.card,
   transition-timing-function: unset !important;
   will-change: unset !important;
 }
+/* ── 设计令牌 ─────────────────────────────────────────────────
+ * 暗色为 :root 基准（与 foxy-editor 同套 16 令牌）；浅色整套覆盖写在
+ * 下方「网页配色（整站明暗主题）」节的 html.site-light / html.site-auto 里。
+ * 表面层级：--bg < --bg-soft < --card < --card-inner。
+ *
+ * f5a 原先那套 9 色面板系令牌已整体退役，按语义一对一映射过来（卡片→card、
+ * 次表面→bg-soft、内层卡→card-inner、次要字→text-dim、强调色→accent、
+ * 宏绿→ok），全文机械替换完成、旧定义已删除。
+ * f5a 专属几何令牌（--topbar-height / --preview-panel-height / --preview-zoom）
+ * 与 --color-scheme 原样保留。 */
 :root {
-  --bg: #0f1115;
-  --panel: #171a21;
-  --panel-2: #1d2230;
-  --panel-inner: #10131b;
-  --panel-soft: #151923;
-  --panel-deep: #11151d;
-  --text: #e8ebf2;
-  --sub: #9aa4ba;
-  --primary: #4f8cff;
-  --macro: #3f8f6a;
-  --border: #2a3142;
-  --ok: #4cc38a;
-  --err: #ff6b6b;
+  --bg: #121316;
+  --bg-soft: #1a1c20;
+  --card: #202329;
+  --card-inner: #262a31;
+  --border: #34383f;
+  --text: #e6e8ec;
+  --text-dim: #9aa0a8;
+  --accent: #4c8dff;
+  --accent-soft: #2c3a55;
+  --danger: #e2564f;
+  --ok: #48c26a;
+  --warn: #e2a33f;
+  --err: #ee6b64;
+  --sel: #ffb020;
+  --radius: 10px;
+  --mono: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace;
   --color-scheme: dark;
+  /* f5a 专属几何 */
   --topbar-height: 72px;
   --preview-panel-height: clamp(140px, 22vh, 220px);
   --preview-zoom: 1;
+  /* 中央内容列几何：顶栏、main、预览面板三方共用（见 --content-pad-x 下方注释） */
+  --content-max: 1360px;
+  --content-pad-x: 20px;
+  /* 少量骨架令牌，只用于本次重构新增的通用规则 */
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --fs-sm: 12px;
+  --fs-base: 14px;
+  --shadow-dialog: 0 18px 60px rgba(0, 0, 0, 0.55);
+  --dur-fast: 0.12s;
 }
 
 * {
   box-sizing: border-box;
 }
 
+/* hidden 属性兜底：UA 样式里的 [hidden]{display:none} 会被作者样式覆盖，
+ * 例如 .form-row{display:flex} 会让带 hidden 的行照常显示。 */
 [hidden] {
   display: none !important;
+}
+
+html {
+  scrollbar-color: #3a3e45 #16171a;
 }
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
+  /* f5a 现有 clamp() 响应式字号保留（与 foxy 的固定 14px 不同） */
   font: clamp(12px, 1.8vh, 15px)/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+/* 等宽片段与链接 */
+code {
+  font-family: var(--mono);
+  background: #2b2f36;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.92em;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* 键盘可达性：焦点可见 */
+a:focus-visible,
+button:focus-visible,
+.mini-button:focus-visible,
+.tab:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .topbar {
   /* 顶栏随页面滚动（借鉴 foxy-see-me）：滚动离开后由悬浮撤销/回到顶部按钮接管 */
   position: static;
   z-index: 10;
-  padding: 10px 16px 8px;
+  padding: 10px var(--content-pad-x) 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
@@ -63,12 +126,12 @@ body {
   font-size: clamp(12px, 2.4vw, 15px);
   font-weight: 500;
   line-height: 1.25;
-  color: var(--sub);
+  color: var(--text-dim);
 }
 
 .topbar p {
   margin: 0;
-  color: var(--sub);
+  color: var(--text-dim);
 }
 
 .topbar h2 a,
@@ -78,10 +141,13 @@ body {
   color: inherit;
 }
 
+/* ── 标签页（观感对齐 foxy；clamp() 响应式保留）─────────────────
+ * 标签条 sticky 吸顶（f5a 现状，保留）；未选中用 --bg-soft 次表面，
+ * 选中用 --card + 深字 + 字重，两者对比明确。 */
 .tabs {
   display: flex;
   gap: clamp(4px, 1vh, 8px);
-  padding: clamp(8px, 1.2vh, 12px) clamp(12px, 2.5vh, 20px);
+  padding: clamp(8px, 1.2vh, 12px) var(--content-pad-x);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
@@ -91,20 +157,62 @@ body {
 
 .tab {
   border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
+  background: var(--bg-soft);
+  color: var(--text-dim);
   padding: clamp(5px, 0.8vh, 8px) clamp(8px, 1.5vh, 14px);
   cursor: pointer;
   border-radius: 6px;
+  font-size: var(--fs-base);
+}
+
+.tab:hover {
+  color: var(--text);
 }
 
 .tab.active {
-  background: var(--primary);
-  border-color: var(--primary);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
 }
 
+/* 面板容器：f5a 用 .panel.active 切换（不是 foxy 的 .tabpanel.active），
+ * 两套都写，等 HTML 侧改完自然生效。 */
+.tabpanel { display: none; }
+.tabpanel.active { display: block; }
+
+/* ── 中央内容列 ───────────────────────────────────────────────
+ * max-width 居中 + --content-pad-x 内边距：顶栏、标签条、main 三方对齐。 */
 main {
-  padding: 0 0 24px;
+  padding: 0 var(--content-pad-x) 24px;
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+/* main 现在自带 --content-pad-x 的左右内边距，而内部容器（.layout-workbench
+ * / .card）各自还带着 20px 横向外边距 —— 原来 main 没有横向内边距，那 20px
+ * 就是唯一的横向留白；两边一叠就成了双倍缩进。
+ * 注意这里的内部结构是 main > section.panel > div.layout-workbench > .card，
+ * 所以选择器不能只写直接子级。统一归零后，整列宽度由 --content-pad-x 一个量
+ * 决定；纵向 margin 不受影响。窄屏那条 `margin: 6px 10px 0` 的 media 规则
+ * 权重低于本条，横向同样被归零。 */
+main .layout-workbench,
+main .card {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* ── 双栏工作区（foxy .workbench 同款；f5a 现状用 .layout-workbench，
+ * 两套并存，等 HTML 侧换 class 后自然生效）──────────────────────── */
+.workbench { display: flex; gap: 14px; align-items: flex-start; }
+.col-main { flex: 1 1 auto; min-width: 0; }
+.col-side { flex: 0 0 380px; }
+/* 竖排时 align-items 的语义会从「行轴的顶对齐」翻转成「列轴的水平对齐」：
+ * 沿用 flex-start 会让子项按 max-content 收缩，宽网格把 .col-main 撑爆
+ * → 文档整体横向溢出。竖排下必须 stretch，让超宽内容只在自己的 wrap 内横滚。 */
+@media (max-width: 980px) {
+  .workbench { flex-direction: column; align-items: stretch; }
+  .col-main, .col-side { flex: 1 1 auto; width: 100%; max-width: 100%; }
 }
 
 .panel {
@@ -123,7 +231,7 @@ main {
 }
 
 .card {
-  background: var(--panel);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: clamp(8px, 1.5vh, 14px);
@@ -143,7 +251,7 @@ main {
 }
 
 button, .file-button {
-  background: var(--panel-2);
+  background: var(--bg-soft);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -156,16 +264,330 @@ summary {
   font-weight: 650;
 }
 
+/* ── 卡片与折叠卡（foxy details.card 观感）──────────────────────
+ * ⚠️ f5a 的 `details.card` 同时是**折叠容器**：index.html 里 14 个
+ * `<details class="card">` 靠 summary 作首个子元素展开/收起，内容区必须留
+ * 内边距。foxy 那套 `details.card > *:not(summary){margin-left/right:14px}`
+ * 是按「卡片零内边距 + 子元素各自缩排」写的，套到 f5a 会把 flex/grid 子容器
+ * 推歪（f5a 卡片里是 .layout-workbench / .form-grid-2 这类块级容器，不是
+ * 一行行裸段落）。所以这里改成：summary 保留 foxy 的标题栏 + 分隔线观感，
+ * 内容区沿用 f5a 自己的卡片内边距（.card 的 padding）。
+ * 另外 f5a 的 `<div class="card">`（非 details）也用同一套边框/底色。 */
+details.card > summary,
+.card > summary {
+  cursor: pointer;
+  padding: 9px 14px;
+  font-weight: 600;
+  background: #23262c;
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+  list-style-position: inside;
+}
+
+details.card > summary::-webkit-details-marker,
+.card > summary::-webkit-details-marker {
+  color: var(--text-dim);
+}
+
+details.card[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+/* 子卡（foxy .inner-card）：嵌在卡片里的次级折叠块 */
+.inner-card {
+  background: var(--card-inner);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 10px 0 !important;
+  padding: 0;
+}
+
+.inner-card > summary {
+  cursor: pointer;
+  padding: 7px 12px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #cdd2da;
+  user-select: none;
+}
+
+.inner-card .inner-card-body {
+  padding: 10px 12px;
+}
+
+/* ── 按钮族（foxy 体系）────────────────────────────────────────
+ * 基准 button / .mini-button 已在上面给了 f5a 的 clamp() padding（保留，
+ * 不动），这里补齐语义变体的**配色**，其余几何沿用基准。 */
+button.danger,
+.mini-button.danger {
+  background: transparent;
+  border-color: #6b3835;
+  color: var(--danger);
+}
+
+button.danger:hover,
+.mini-button.danger:hover {
+  background: #3a2321;
+}
+
+/* 无框图标按钮：行内 ↑ ↓ ✕ 这类 */
+.icon-button {
+  padding: 2px 8px;
+  font-size: 13px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-dim);
+}
+
+.icon-button:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* 删除类图标按钮（`layout-delete-layout` 的 🗑）：foxy 只在 hover 时上色，
+ * f5a 沿用会造成「平时看不出这是危险操作、鼠标移上去才变红」——危险语义
+ * 不该依赖指针位置才可读。这里给静态态也上 --danger 色，hover 加浅红底。 */
+.icon-button.danger {
+  color: var(--danger);
+}
+
+.icon-button.danger:hover {
+  color: var(--danger);
+  border-color: #6b3835;
+  background: #3a2321;
+}
+
+/* 纯图标按钮（无文字） */
+.icon-only {
+  padding: 5px 8px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+
+.icon-only svg {
+  display: block;
+}
+
+/* 需要用户动手的按钮：黄底实心，明显区别于普通按钮 */
+.mini-button.attention {
+  background: var(--warn);
+  border-color: var(--warn);
+  color: #1a1c20;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.mini-button.attention:hover {
+  background: #f0b455;
+  border-color: #f0b455;
+}
+
+.mini-button.attention:focus-visible {
+  outline: 2px solid var(--warn);
+  outline-offset: 2px;
+}
+
+/* ── 紧凑表单控件（foxy mini- 族）───────────────────────────────
+ * index.html 目前还没换这批 class；样式先写好，与现有 `input/select` 规则并存，
+ * 等 HTML 侧改完自然生效（旧的通用 input 规则不删，保证现状可用）。 */
+.mini-input,
+.mini-select {
+  background: #17191d;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 13px;
+  max-width: 100%;
+}
+
+.mini-input.wide,
+.mini-select.wide {
+  width: min(320px, 100%);
+}
+
+.mini-input:focus,
+.mini-select:focus,
+textarea:focus {
+  outline: 1px solid var(--accent);
+}
+
+/* 滑杆：与 mini-label 同行的窄控件 */
+.mini-range {
+  width: 110px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* 紧凑数字输入框（预览几何旋钮：高度 / 圆角 / 横距 / 纵距） */
+.num-input {
+  width: 56px;
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  padding: 3px 4px 3px 6px;
+  text-align: right;
+}
+
+/* 数字框右侧的单位（dp / %）：与输入框贴紧，不占额外换行点 */
+.pt-unit {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-left: -2px;
+}
+
+.mini-label {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mini-label.check {
+  cursor: pointer;
+}
+
+label.check {
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ── 表单行 / 两列表单 ──────────────────────────────────────────
+ * .form-row / .form-inline / .form-grid-2 在 f5a 里已有定义（业务面板
+ * 大量依赖），原样保留在业务区，这里**不重复定义** —— 只补 foxy 体系里
+ * f5a 缺的通用件。 */
+
+/* jscolor 颜色输入框：色块即输入框背景，点击弹出（foxy 同款） */
+.color-input {
+  width: 150px;
+  font-family: var(--mono);
+  cursor: pointer;
+}
+
+/* 需要补选文件夹时的醒目提示行：黄框 + 黄底 */
+.folder-hint {
+  display: flex;
+  background: rgba(226, 163, 63, 0.12);
+  border: 1px solid var(--warn);
+  border-left-width: 4px;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.folder-hint-text {
+  flex: 1 1 260px;
+  min-width: 0;
+  color: var(--warn);
+  font-size: 12.5px;
+  line-height: 1.55;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* 圆角状态标签（预览开关、布局 pills 等） */
+.pill {
+  padding: 3px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #23262c;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 12.5px;
+}
+
+.pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 浅色下 .pill.active 的蓝底必须赢回浅色 `.pill` 覆盖：
+ * `html.site-light .pill` 权重 (0,2,1) 高过 `.pill.active` 的 (0,2,0)
+ * （多一个 html tag），不单独写这条，选中态会变成白字浮浅灰底。 */
+html.site-light .pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (prefers-color-scheme: light) {
+  html.site-auto .pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+}
+
+/* 定位/新建后的高亮：**一直亮到用户下一次点击或按键**（与 foxy 同款语义，
+ * 由 JS 挂一次性 pointerdown/keydown 监听摘掉本类）。
+ * 蓝（accent）= 非问题；红（err）= 出错位置；黄（sel）= 布局里已选中的按键。 */
+.flash-hold {
+  animation: flash-hold 1.4s ease-in-out infinite;
+  border-color: var(--accent);
+}
+
+.flash-hold.flash-hold-err {
+  animation-name: flash-hold-err;
+  border-color: var(--err);
+}
+
+.flash-hold.flash-hold-sel {
+  animation-name: flash-hold-sel;
+  border-color: var(--sel);
+}
+
+@keyframes flash-hold {
+  0%, 100% { box-shadow: 0 0 0 3px var(--accent); }
+  50% { box-shadow: 0 0 0 7px var(--accent); }
+}
+
+@keyframes flash-hold-err {
+  0%, 100% { box-shadow: 0 0 0 3px var(--err); }
+  50% { box-shadow: 0 0 0 7px var(--err); }
+}
+
+@keyframes flash-hold-sel {
+  0%, 100% { box-shadow: 0 0 0 3px var(--sel); }
+  50% { box-shadow: 0 0 0 7px var(--sel); }
+}
+
+/* ── 键盘预览面板（f5a 专属，无 foxy 对应）──────────────────────
+ * ⚠️ 本轮只升观感（表面色 / 边框 / 圆角 / 按钮），**几何与定位一律不动**：
+ * `position: relative; z-index: 9` 要压住 `#layout-preview-meta` 的绝对定位；
+ * `padding: 10px 20px 8px` 与 `.preview-shell` 的网格列宽会被 JS 量出来画键盘
+ * （app.js 里 getBoundingClientRect），改动会直接影响预览尺寸。
+ * 所以：只动颜色 / 圆角这类不影响测量值的属性，宽高与内间距数值原样。 */
 .keyboard-preview-panel {
   position: relative;
   z-index: 9;
-  background: var(--panel-deep);
-  border-bottom: 1px solid var(--border);
+  background: var(--card-inner);
+  border: 1px solid var(--border);
+  border-radius: 8px;
   padding: 10px 20px 8px;
 }
 
 .keyboard-preview-panel > summary {
   padding-right: 80px;
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+}
+
+/* 预览图例（按键角标说明）：沿用 f5a 的 .preview-hint-legend（foxy 叫
+ * .preview-legend，class 名不同，不搬）。色点走令牌，浅色下加深。 */
+.preview-hint-legend .legend-dot.key-badge-lp { background: #4f8cff; }
+.preview-hint-legend .legend-dot.key-badge-macro { background: var(--ok); }
+.preview-hint-legend .legend-dot.key-badge-swipe { background: #b478ff; }
+.preview-hint-legend .legend-dot.key-badge-swipe-legacy {
+  background: transparent;
+  border: 1.5px solid #b478ff;
+}
+
+/* 浅色页面上图例三色太淡（浅蓝/浅紫都是为深底调的），加深到与键上徽标浅色值同档 */
+html.site-light .preview-hint-legend .legend-dot.key-badge-lp { background: #1f6fb8; }
+html.site-light .preview-hint-legend .legend-dot.key-badge-swipe { background: #7a3fd0; }
+html.site-light .preview-hint-legend .legend-dot.key-badge-swipe-legacy { border-color: #7a3fd0; }
+@media (prefers-color-scheme: light) {
+  html.site-auto .preview-hint-legend .legend-dot.key-badge-lp { background: #1f6fb8; }
+  html.site-auto .preview-hint-legend .legend-dot.key-badge-swipe { background: #7a3fd0; }
+  html.site-auto .preview-hint-legend .legend-dot.key-badge-swipe-legacy { border-color: #7a3fd0; }
 }
 
 /* Overlay meta on summary line (moved out of preview-shell by JS) */
@@ -175,7 +597,7 @@ summary {
   left: 50%;
   transform: translateX(-50%);
   font-weight: 400;
-  color: var(--sub);
+  color: var(--text-dim);
   margin: 0;
   max-width: 50%;
   overflow: hidden;
@@ -215,23 +637,23 @@ summary {
   border-radius: 0;
   border-left: 0;
   border-right: 0;
-  background: var(--panel-inner);
+  background: var(--card-inner);
   color: var(--text);
   color-scheme: var(--color-scheme);
 }
 
 .spinner-strip select:disabled {
-  color: var(--sub);
-  background: var(--panel-soft);
+  color: var(--text-dim);
+  background: var(--bg-soft);
 }
 
 .spinner-strip select option {
-  background: var(--panel-inner);
+  background: var(--card-inner);
   color: var(--text);
 }
 
 .spinner-strip select option:checked {
-  background: var(--primary);
+  background: var(--accent);
   color: #fff;
 }
 
@@ -254,12 +676,46 @@ summary {
 }
 
 button:hover, .file-button:hover {
-  border-color: var(--primary);
+  border-color: var(--accent);
+}
+
+/* 主操作按钮（foxy `button.primary` 同款）。迁移时补齐的一点：foxy 在暗色基准
+ * 里就写了 `.primary`，f5a 侧原先只在 `html.site-light/site-auto` 两处浅色覆盖
+ * 里定义 —— 结果是这个类在**暗色下根本不起作用**（加了等于没加）。暗色基准 +
+ * 浅色赢回两条都要有，缺一不可。 */
+button.primary,
+.mini-button.primary,
+.file-button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.primary:hover,
+.mini-button.primary:hover,
+.file-button.primary:hover {
+  background: #6ba2ff;
+  border-color: #6ba2ff;
 }
 
 button:disabled {
   opacity: .5;
   cursor: not-allowed;
+}
+
+/* 主/危险按钮的禁用态：只靠上面的 opacity，primary 禁用后仍是一块明显的蓝，
+ * 与可点态几乎无法区分（撤销/重做、各对话框保存按钮都有此态）。这里在半透明
+ * 之外再退掉强调底色，让"禁用"在颜色上也读得出来。 */
+button.primary:disabled,
+.mini-button.primary:disabled,
+.file-button.primary:disabled,
+button.danger:disabled,
+.mini-button.danger:disabled,
+.file-button.danger:disabled {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-dim);
+  opacity: .5;
 }
 
 .file-button input {
@@ -268,7 +724,7 @@ button:disabled {
 
 input, select, textarea {
   width: 100%;
-  background: var(--panel-inner);
+  background: var(--card-inner);
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -277,13 +733,19 @@ input, select, textarea {
 }
 
 select option {
-  background: var(--panel-inner);
+  background: var(--card-inner);
   color: var(--text);
 }
 
 input[type="checkbox"] {
+  /* 易用性:默认 13px 复选框命中区太小。撑到 24px 高并保留垂直居中,
+     视觉方块大小不变(accent-color 只着色不改尺寸),但可点面积翻倍。
+     实测(无头 Edge,1440x1000):改动前 8 个复选框高度 13px,改动后 >=24px。 */
   width: auto;
+  min-height: 24px;
   margin-right: 6px;
+  vertical-align: middle;
+  accent-color: var(--accent);
 }
 
 .form-row {
@@ -297,7 +759,7 @@ input[type="checkbox"] {
   display: inline-block;
   margin-bottom: 0;
   min-width: 80px;
-  color: var(--sub);
+  color: var(--text-dim);
 }
 
 .theme-color-rows {
@@ -337,7 +799,7 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
-  background: var(--panel-inner);
+  background: var(--card-inner);
   width: 100%;
   min-width: 0;
 }
@@ -405,13 +867,13 @@ input[type="checkbox"] {
 }
 
 .popup-chip.drop-before {
-  border-left-color: var(--primary);
-  box-shadow: inset 3px 0 0 var(--primary);
+  border-left-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .popup-chip.drop-after {
-  border-right-color: var(--primary);
-  box-shadow: inset -3px 0 0 var(--primary);
+  border-right-color: var(--accent);
+  box-shadow: inset -3px 0 0 var(--accent);
 }
 
 .popup-entry-delete {
@@ -447,7 +909,7 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background-color: var(--panel-inner);
+  background-color: var(--card-inner);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -472,7 +934,7 @@ input[type="checkbox"] {
 .theme-background-preview.empty {
   display: grid;
   place-items: center;
-  color: var(--sub);
+  color: var(--text-dim);
   font-size: 13px;
 }
 
@@ -509,7 +971,7 @@ input[type="checkbox"] {
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--panel-inner);
+  background: var(--card-inner);
   display: grid;
   place-items: center;
   touch-action: none;
@@ -525,7 +987,7 @@ input[type="checkbox"] {
 
 .theme-crop-selection {
   position: absolute;
-  border: 2px solid var(--primary);
+  border: 2px solid var(--accent);
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.42);
   cursor: move;
 }
@@ -536,7 +998,7 @@ input[type="checkbox"] {
   height: 14px;
   border-radius: 50%;
   background: #fff;
-  border: 2px solid var(--primary);
+  border: 2px solid var(--accent);
 }
 
 .crop-handle.handle-nw { left: -8px; top: -8px; cursor: nwse-resize; }
@@ -548,13 +1010,13 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px;
-  background: var(--panel-inner);
+  background: var(--card-inner);
   text-align: left;
 }
 
 .theme-card.active {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 1px var(--primary) inset;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
 .theme-card-title {
@@ -563,7 +1025,7 @@ input[type="checkbox"] {
 }
 
 .theme-card-meta {
-  color: var(--sub);
+  color: var(--text-dim);
   font-size: 12px;
   margin-bottom: 6px;
 }
@@ -668,20 +1130,42 @@ input[type="checkbox"] {
   border-radius: 50%;
 }
 
+/* ── 动态行 hover 规范 ───────────────────────────────────────────
+ * 主题色行 / 宏步骤行 / 弹出字符行 / 显示映射行 / 图标槽行都是 JS 动态生成的
+ * 密集列表，原先只有 .icon-slot-row 有 hover —— 用户在几十行里找不到"我正指着
+ * 哪一行"。这里统一给一层：hover 抬到 --bg-soft 表面（比 --card-inner 高一级，
+ * 与 foxy 的表面层级语义一致），并加 --dur-fast 过渡。
+ * ⚠️ 只抬背景不抬边框：边框跟着变会让密集行在 hover 时"抖"。 */
+.theme-color-row,
+.macro-step-row,
+.popup-entry-row,
+.display-map-row,
+.icon-slot-row {
+  transition: background var(--dur-fast) ease;
+}
+
+.theme-color-row:hover,
+.macro-step-row:hover,
+.popup-entry-row:hover,
+.display-map-row:hover,
+.icon-slot-row:hover {
+  background: var(--bg-soft);
+}
+
 .theme-color-row {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px;
-  background: var(--panel-inner);
+  background: var(--card-inner);
 }
 
 .theme-color-row > label {
   display: block;
   margin-bottom: 8px;
-  color: var(--sub);
+  color: var(--text-dim);
 }
 .surface-active-mark {
-  color: var(--primary);
+  color: var(--accent);
   font-size: 0.85em;
   vertical-align: middle;
 }
@@ -695,14 +1179,14 @@ input[type="checkbox"] {
   align-items: center;
   gap: 6px;
   margin-bottom: 8px;
-  color: var(--sub);
+  color: var(--text-dim);
   font-size: 12px;
   cursor: pointer;
   user-select: none;
 }
 
 .theme-ripple-auto input {
-  accent-color: var(--primary);
+  accent-color: var(--accent);
 }
 
 .theme-color-input {
@@ -746,12 +1230,12 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 6px 8px;
-  background: var(--panel-inner);
+  background: var(--card-inner);
 }
 
 .theme-preview-mobile-card > summary {
   font-size: 12px;
-  color: var(--sub);
+  color: var(--text-dim);
 }
 
 .theme-preview-extra-mobile {
@@ -827,12 +1311,12 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
-  background: var(--panel-inner);
+  background: var(--card-inner);
   font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .cm-editor.cm-focused {
-  outline: 1px solid var(--primary);
+  outline: 1px solid var(--accent);
 }
 
 .cm-editor .cm-scroller {
@@ -865,7 +1349,7 @@ input[type="checkbox"] {
 }
 
 .status {
-  color: var(--sub);
+  color: var(--text-dim);
   min-height: 18px;
   margin-top: 4px;
   font-size: 12px;
@@ -918,24 +1402,24 @@ input[type="checkbox"] {
 
 .layout-chip.alt-key {
   background: var(--chip-alt-bg, #303645);
-  color: var(--chip-alt-fg, var(--sub));
+  color: var(--chip-alt-fg, var(--text-dim));
 }
 
 .layout-chip.accent-key {
-  background: var(--chip-accent-bg, var(--primary));
-  border-color: var(--primary);
+  background: var(--chip-accent-bg, var(--accent));
+  border-color: var(--accent);
   color: var(--chip-accent-fg, white);
 }
 
 .layout-chip.macro-key {
-  background: var(--macro);
-  border-color: var(--macro);
+  background: var(--ok);
+  border-color: var(--ok);
   border-width: 2px;
   color: white;
 }
 
 .layout-chip.compose-key {
-  color: var(--macro);
+  color: var(--ok);
 }
 
 .layout-chip.space-key {
@@ -955,7 +1439,7 @@ input[type="checkbox"] {
   right: 5px;
   font-size: 10px;
   line-height: 1;
-  color: var(--sub);
+  color: var(--text-dim);
   font-weight: 500;
 }
 
@@ -974,7 +1458,7 @@ input[type="checkbox"] {
 }
 
 .row-drag-handle {
-  color: var(--sub);
+  color: var(--text-dim);
   cursor: grab;
   user-select: none;
   touch-action: none;
@@ -995,7 +1479,7 @@ input[type="checkbox"] {
   padding: 10px;
   padding-top: calc(10px + var(--preview-top-bar-height, 0px));
   padding-bottom: calc(10px + var(--preview-bottom-padding, 0px));
-  background-color: var(--panel-inner);
+  background-color: var(--card-inner);
   max-width: 598px;
   margin: 0 auto;
   --preview-row-gap: 8px;
@@ -1101,7 +1585,7 @@ input[type="checkbox"] {
 
 #layout-preview .layout-key[data-preview-row]:focus-visible,
 #layout-preview .layout-key[data-preview-aux-key]:focus-visible {
-  outline: 2px solid var(--primary, #4f8cff);
+  outline: 2px solid var(--accent, #4f8cff);
   outline-offset: 1px;
 }
 
@@ -1188,42 +1672,42 @@ input[type="checkbox"] {
 
 .add-row-button {
   min-width: 160px;
-  background: var(--primary);
-  border-color: var(--primary);
+  background: var(--accent);
+  border-color: var(--accent);
   color: white;
   font-weight: 700;
 }
 
 .layout-key.alt-key {
   background: var(--preview-key-bg, #303645);
-  color: var(--sub);
+  color: var(--text-dim);
   font-size: clamp(12px, 34cqw, 16px);
   font-weight: 700;
 }
 
 .layout-key.accent-key {
-  background: var(--preview-key-bg, var(--primary));
-  border-color: var(--primary);
+  background: var(--preview-key-bg, var(--accent));
+  border-color: var(--accent);
   color: white;
   font-size: clamp(13px, 38cqw, 20px);
 }
 
 .layout-key.macro-key {
-  background: var(--preview-key-bg, var(--macro));
-  border-color: var(--macro);
+  background: var(--preview-key-bg, var(--ok));
+  border-color: var(--ok);
   border-width: 2px;
   color: white;
   font-size: clamp(13px, 38cqw, 20px);
 }
 
 .layout-key.compose-key {
-  color: var(--primary);
+  color: var(--accent);
 }
 
 .layout-key.space-key {
   background: var(--preview-key-bg, #2a3140);
   font-size: clamp(12px, 20cqw, 18px);
-  color: var(--sub);
+  color: var(--text-dim);
 }
 
 .layout-key-alt {
@@ -1236,7 +1720,7 @@ input[type="checkbox"] {
   text-overflow: clip;
   white-space: nowrap;
   font-size: clamp(7px, 18cqw, 10px);
-  color: var(--sub);
+  color: var(--text-dim);
   line-height: 1;
   z-index: 1;
 }
@@ -1260,7 +1744,7 @@ input[type="checkbox"] {
   text-overflow: ellipsis;
   font-weight: 500;
   font-size: clamp(8px, 14cqw, 12px);
-  color: var(--sub);
+  color: var(--text-dim);
   line-height: 1;
 }
 
@@ -1299,7 +1783,7 @@ input[type="checkbox"] {
   min-height: 34px;
   border: 1px dashed var(--border, rgba(255, 255, 255, .25));
   border-radius: var(--preview-key-radius, 6px);
-  color: var(--sub);
+  color: var(--text-dim);
   font-size: 12px;
   padding: 4px 8px;
   text-align: center;
@@ -1363,7 +1847,7 @@ input[type="checkbox"] {
 .aux-bar-chip-add {
   background: transparent;
   border-style: dashed;
-  color: var(--sub);
+  color: var(--text-dim);
 }
 
 #layout-aux-bar-size {
@@ -1375,7 +1859,7 @@ input[type="checkbox"] {
 }
 
 #layout-aux-bar-keys-section label {
-  color: var(--sub);
+  color: var(--text-dim);
 }
 
 .qr-wrap {
@@ -1412,13 +1896,20 @@ input[type="checkbox"] {
   opacity: 0.9;
 }
 
+/* ── 对话框（foxy 三件套：titlebar / body / toolbar）────────────
+ * f5a 现状：17 个 `<dialog class="editor-dialog">`，内容直接塞在
+ * `.editor-form{padding:12px}` 里，没有 body/toolbar 分层 —— 下面的
+ * `.dialog-body` / `.dialog-toolbar` 先写好（新结构用），
+ * **现存 17 个 dialog 的专属样式与几何一律保留**，只把色值换成令牌。
+ * ⚠️ 宽度 `min(860px, ...)` 比 foxy 宽（foxy 560/720），是 f5a 的既有值，不动。 */
 .editor-dialog {
   width: min(860px, calc(100vw - 32px));
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--panel);
+  background: var(--card);
   color: var(--text);
   padding: 0;
+  box-shadow: var(--shadow-dialog);
 }
 
 .editor-dialog::backdrop {
@@ -1436,12 +1927,44 @@ input[type="checkbox"] {
   border-bottom: 1px solid var(--border);
   margin: -12px -12px 12px;
   padding: 10px 12px;
+  /* 观感对齐 foxy：标题栏用次表面色，与卡片底色区分开 */
+  background: #23262c;
+  border-radius: 8px 8px 0 0;
 }
 
 .dialog-titlebar h3 {
   margin: 0;
   flex: 1;
   font-size: 18px;
+}
+
+/* 新结构三件套里剩下的两件（f5a 现存 dialog 还没有这两层，先写好） */
+.dialog-body {
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.dialog-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  /* 负边距抵消 .editor-form 的 padding:12px，让底栏像标题栏一样贴到对话框边缘，
+   * 上边框与下圆角才能真正落在对话框底线上（否则会悬在留白中间）。 */
+  margin: 12px -12px -12px !important;
+  justify-content: flex-end;
+  background: #1d2025;
+  border-radius: 0 0 8px 8px;
+}
+
+.dialog-toolbar.wrap {
+  flex-wrap: wrap;
+}
+
+/* 对话框里的表单行：取消 80px 标签最小宽，让窄对话框里的标签不被压断 */
+.dialog-body .form-row {
+  grid-template-columns: auto 1fr;
 }
 
 .details-toolbar {
@@ -1497,6 +2020,12 @@ input[type="checkbox"] {
   grid-template-columns: 1fr 1fr auto;
   gap: 8px;
   margin-bottom: 8px;
+  /* 原本是裸 grid 行、连底色都没有：hover 会从透明直接跳成 --bg-soft，
+   * 观感是"凭空浮出一块"。补一层基础表面，让行本身在对话框里可辨认。 */
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-inner);
 }
 
 .color-edit-row {
@@ -1508,7 +2037,7 @@ input[type="checkbox"] {
 }
 
 .color-edit-row > label {
-  color: var(--sub);
+  color: var(--text-dim);
 }
 
 .color-edit-row .color-mode,
@@ -1596,14 +2125,14 @@ input[type="checkbox"] {
   border-radius: 8px;
   padding: 8px;
   margin-bottom: 8px;
-  background: #141925;
+  background: var(--card-inner);
   cursor: default;
   touch-action: manipulation;
 }
 
 .macro-step-row.dragging {
   opacity: 0.7;
-  border-color: var(--primary);
+  border-color: var(--accent);
 }
 
 .macro-step-type {
@@ -1644,8 +2173,8 @@ input[type="checkbox"] {
   min-height: 34px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: #1e2636;
-  color: var(--fg);
+  background: var(--card-inner);
+  color: var(--text);
 }
 
 .macro-chip {
@@ -1777,7 +2306,7 @@ input[type="checkbox"] {
 
 .footnote {
   padding: 8px 20px 20px;
-  color: var(--sub);
+  color: var(--text-dim);
 }
 
 .visit-stats {
@@ -1997,7 +2526,7 @@ input[type="checkbox"] {
 .icon-slot-section-header {
   font-weight: 700;
   font-size: 13px;
-  color: var(--primary);
+  color: var(--accent);
   padding: 12px 0 4px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 4px;
@@ -2023,7 +2552,7 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--sub);
+  color: var(--text-dim);
   font-size: 18px;
 }
 
@@ -2075,7 +2604,7 @@ input[type="checkbox"] {
 
 .icon-slot-preview-label {
   font-size: 12px;
-  color: var(--sub);
+  color: var(--text-dim);
 }
 
 .icon-slot-preview-box {
@@ -2083,7 +2612,7 @@ input[type="checkbox"] {
   height: 48px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--panel-inner);
+  background: var(--card-inner);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2105,7 +2634,7 @@ input[type="checkbox"] {
   display: block;
   margin-bottom: 4px;
   font-size: 12px;
-  color: var(--sub);
+  color: var(--text-dim);
 }
 
 /* Grid-based icon theme card for icon theme list */
@@ -2113,14 +2642,14 @@ input[type="checkbox"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px;
-  background: var(--panel-inner);
+  background: var(--card-inner);
   text-align: left;
   cursor: pointer;
 }
 
 .icon-theme-card.active {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 1px var(--primary) inset;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
 }
 
 .icon-theme-card-preview {
@@ -2131,7 +2660,7 @@ input[type="checkbox"] {
   border-radius: 6px;
   min-height: 64px;
   overflow: hidden;
-  background: var(--panel);
+  background: var(--card);
 }
 
 .icon-theme-card-preview-cell {
@@ -2165,48 +2694,173 @@ input[type="checkbox"] {
 
 .icon-theme-card-count {
   font-size: 11px;
-  color: var(--sub);
+  color: var(--text-dim);
   margin-top: 2px;
 }
 
-/* ── 站点亮/暗主题（借鉴 foxy-see-me）────────────────────────
- * html 根元素挂 site-auto / site-light / site-dark 三态类；
- * 亮色调色板覆盖同一组变量，auto 跟随系统偏好。
- * 少数硬编码深色的组件在下方补丁区单独适配。 */
+/* ── 站点亮/暗主题（机制与 foxy-see-me 同源）────────────────────
+ * html 根元素由 app.js 挂 site-auto / site-light / site-dark 三态类
+ * （外加 site-mode-light / site-mode-dark 表示"解析后的实际模式"）：
+ *   · site-light —— 强制浅色；
+ *   · site-dark  —— 强制暗色（= :root 基准，不写覆盖）；
+ *   · site-auto  —— 跟随下面这条媒体查询（系统浅色时自动变浅）。
+ * 亮色调色板覆盖同一组变量；少数硬编码深色的组件在下方「散点覆盖」区逐个适配。
+ *
+ * 写法：每类覆盖都**双写** —— 一条 `html.site-light X`、一条
+ * `@media (prefers-color-scheme: light) { html.site-auto X }`。
+ * ⚠️ 凡是带 html tag 的浅色覆盖（权重 0,1,2）都会压过同名的 `.cls.subcls`
+ * （0,2,0），所以主按钮/选中 pill 这类"必须赢回"的状态要在下面单独再写一条。 */
 html.site-light {
-  --bg: #f3f5fa;
-  --panel: #ffffff;
-  --panel-2: #eef1f8;
-  --panel-inner: #ffffff;
-  --panel-soft: #eef1f8;
-  --panel-deep: #e9edf5;
-  --text: #1d2434;
-  --sub: #5c6577;
-  --primary: #2f6bff;
-  --macro: #2e8f63;
-  --border: #d7dce8;
-  --ok: #1f9d63;
-  --err: #d64545;
+  --bg: #f2f3f5;
+  --bg-soft: #e8eaed;
+  --card: #ffffff;
+  --card-inner: #f0f1f4;
+  --border: #d4d7dd;
+  --text: #1c1e22;
+  --text-dim: #5f656e;
+  --accent-soft: #d7e6ff;
   --color-scheme: light;
 }
 
 @media (prefers-color-scheme: light) {
   html.site-auto {
-    --bg: #f3f5fa;
-    --panel: #ffffff;
-    --panel-2: #eef1f8;
-    --panel-inner: #ffffff;
-    --panel-soft: #eef1f8;
-    --panel-deep: #e9edf5;
-    --text: #1d2434;
-    --sub: #5c6577;
-    --primary: #2f6bff;
-    --macro: #2e8f63;
-    --border: #d7dce8;
-    --ok: #1f9d63;
-    --err: #d64545;
+    --bg: #f2f3f5;
+    --bg-soft: #e8eaed;
+    --card: #ffffff;
+    --card-inner: #f0f1f4;
+    --border: #d4d7dd;
+    --text: #1c1e22;
+    --text-dim: #5f656e;
+    --accent-soft: #d7e6ff;
     --color-scheme: light;
   }
+}
+
+/* 表单控件与滚动条跟随站点明暗（--color-scheme 由上面两套覆盖写入） */
+html.site-light body, html.site-auto body { color-scheme: light; }
+
+/* ── 浅色散点覆盖：按钮 / 输入框 / 卡片 / 对话框 / tab / 预览面板 ──
+ * f5a 散落在各处的硬编码深色在这里逐个补浅色值（沿用 foxy 的"发现一处补一处"模式）。 */
+
+/* 顶栏：暗色是纯 --bg，浅色下给一点渐变把顶栏从内容里分出来 */
+html.site-light .topbar { background: linear-gradient(180deg, #ffffff, #eef0f3); }
+@media (prefers-color-scheme: light) {
+  html.site-auto .topbar { background: linear-gradient(180deg, #ffffff, #eef0f3); }
+}
+
+/* 按钮族：白底 + 浅灰 hover。
+ * ⚠️ 主按钮蓝底必须赢回上面的白底覆盖 —— `html.site-light button` 权重 (0,1,2)
+ * 高过 `button.primary` 的 (0,1,1)（多一个 html tag），不单独写就是白字浮白底、
+ * 对比度 1.0 完全隐形。 */
+html.site-light button:not(.layout-chip),
+html.site-light .mini-button,
+html.site-light .file-button { background: #ffffff; }
+html.site-light button:not(.layout-chip):hover,
+html.site-light .mini-button:hover,
+html.site-light .file-button:hover { background: #eef0f3; border-color: #b9bdc4; }
+html.site-light button.primary,
+html.site-light .mini-button.primary,
+html.site-light .file-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+html.site-light button.primary:hover,
+html.site-light .mini-button.primary:hover,
+html.site-light .file-button.primary:hover { background: #6ba2ff; border-color: #6ba2ff; color: #fff; }
+/* 危险按钮：暗色是「透明底 + 红字 + 深红 hover 底」，浅色下透明底会直接透出
+ * --card 白底，红字仍在（可读），但 hover 的深红底在白底上过于突兀，换成浅红。
+ * ⚠️ 同样被上面的 `html.site-light button` 白底覆盖压过，必须单独赢回。 */
+html.site-light button.danger,
+html.site-light .mini-button.danger,
+html.site-light .file-button.danger { background: transparent; border-color: #e3a1a1; color: #8f2020; }
+html.site-light button.danger:hover,
+html.site-light .mini-button.danger:hover,
+html.site-light .file-button.danger:hover { background: #fbeaea; border-color: #e3a1a1; color: #8f2020; }
+html.site-light .icon-button.danger { color: #8f2020; }
+html.site-light .icon-button.danger:hover { background: #fbeaea; border-color: #e3a1a1; color: #8f2020; }
+@media (prefers-color-scheme: light) {
+  html.site-auto button:not(.layout-chip),
+  html.site-auto .mini-button,
+  html.site-auto .file-button { background: #ffffff; }
+  html.site-auto button:not(.layout-chip):hover,
+  html.site-auto .mini-button:hover,
+  html.site-auto .file-button:hover { background: #eef0f3; border-color: #b9bdc4; }
+  html.site-auto button.primary,
+  html.site-auto .mini-button.primary,
+  html.site-auto .file-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  html.site-auto button.primary:hover,
+  html.site-auto .mini-button.primary:hover,
+  html.site-auto .file-button.primary:hover { background: #6ba2ff; border-color: #6ba2ff; color: #fff; }
+  html.site-auto button.danger,
+  html.site-auto .mini-button.danger,
+  html.site-auto .file-button.danger { background: transparent; border-color: #e3a1a1; color: #8f2020; }
+  html.site-auto button.danger:hover,
+  html.site-auto .mini-button.danger:hover,
+  html.site-auto .file-button.danger:hover { background: #fbeaea; border-color: #e3a1a1; color: #8f2020; }
+  html.site-auto .icon-button.danger { color: #8f2020; }
+  html.site-auto .icon-button.danger:hover { background: #fbeaea; border-color: #e3a1a1; color: #8f2020; }
+}
+
+/* 输入框 / 下拉 / 数字框：白底深字 */
+html.site-light input,
+html.site-light select,
+html.site-light textarea { background: #ffffff; color: #1c1e22; }
+html.site-light .mini-input,
+html.site-light .mini-select,
+html.site-light .num-input { background: #ffffff; color: #1c1e22; }
+@media (prefers-color-scheme: light) {
+  html.site-auto input,
+  html.site-auto select,
+  html.site-auto textarea { background: #ffffff; color: #1c1e22; }
+  html.site-auto .mini-input,
+  html.site-auto .mini-select,
+  html.site-auto .num-input { background: #ffffff; color: #1c1e22; }
+}
+
+/* 折叠卡片标题栏 / 内层卡标题：浅色下换成浅灰底、深字 */
+html.site-light details.card > summary,
+html.site-light .card > summary { background: #eef0f3; }
+html.site-light .inner-card > summary { background: #eef0f3; color: #1c1e22; }
+@media (prefers-color-scheme: light) {
+  html.site-auto details.card > summary,
+  html.site-auto .card > summary { background: #eef0f3; }
+  html.site-auto .inner-card > summary { background: #eef0f3; color: #1c1e22; }
+}
+
+/* 标签页：未选中项给浅灰底，选中白底 + 深字，把对比拉开
+ * （否则未选中会被上面的白底 button 规则盖成全白，与选中只差字色字重） */
+html.site-light .tab:not(.active) { background: #eef0f3; }
+@media (prefers-color-scheme: light) {
+  html.site-auto .tab:not(.active) { background: #eef0f3; }
+}
+
+/* 对话框三件套 */
+html.site-light .dialog-titlebar { background: #eef0f3; }
+html.site-light .dialog-toolbar { background: #f0f1f4; }
+@media (prefers-color-scheme: light) {
+  html.site-auto .dialog-titlebar { background: #eef0f3; }
+  html.site-auto .dialog-toolbar { background: #f0f1f4; }
+}
+
+/* 预览面板：暗色是 --card-inner，浅色下提亮，与卡片区分开 */
+html.site-light .keyboard-preview-panel { background: #f0f1f4; }
+@media (prefers-color-scheme: light) {
+  html.site-auto .keyboard-preview-panel { background: #f0f1f4; }
+}
+
+/* JSON 编辑区（CodeMirror 容器）*/
+html.site-light .cm-editor { background: #ffffff; color: #1c1e22; }
+html.site-light .json-editor { background: #ffffff; color: #1c1e22; }
+@media (prefers-color-scheme: light) {
+  html.site-auto .cm-editor { background: #ffffff; color: #1c1e22; }
+  html.site-auto .json-editor { background: #ffffff; color: #1c1e22; }
+}
+
+/* 图标主题槽位行：暗色下写死 rgba(42,49,66,.4)（旧 --border 色），浅色下换浅灰 */
+html.site-light .icon-slot-row { border-bottom-color: #d4d7dd; }
+html.site-light .icon-slot-row:hover { background: rgba(76, 141, 255, 0.06); }
+html.site-light .icon-theme-card-preview-cell { border-color: rgba(0, 0, 0, 0.12); background: rgba(0, 0, 0, 0.02); }
+@media (prefers-color-scheme: light) {
+  html.site-auto .icon-slot-row { border-bottom-color: #d4d7dd; }
+  html.site-auto .icon-slot-row:hover { background: rgba(76, 141, 255, 0.06); }
+  html.site-auto .icon-theme-card-preview-cell { border-color: rgba(0, 0, 0, 0.12); background: rgba(0, 0, 0, 0.02); }
 }
 
 /* 弹出字符卡片等硬编码深色的补丁 */
@@ -2240,13 +2894,63 @@ html.site-light .popup-entry-delete {
   html.site-auto .popup-entry-delete { border-color: #e3a1a1; background: #fbeaea; color: #8f2020; }
 }
 
-/* ── 顶栏动作区 ────────────────────────────────────────── */
+/* 宏编辑区（暗色是一套深蓝分层的 chip / 步骤行，浅色下必须整体翻成浅底，
+ * 否则深底配 --text 深字 = 对比度不足，步骤行与 chip 全糊成一团）。
+ * 删除按钮沿用 foxy 的浅红底做法，与「危险操作」语义在两套主题下保持一致。 */
+html.site-light .macro-step-row {
+  border-color: #c9d1e2;
+  background: #f4f6fb;
+}
+
+html.site-light .macro-chip,
+html.site-light .macro-chip-select {
+  border-color: #c9d1e2;
+  background: #eef1f8;
+}
+
+html.site-light .macro-chip-add {
+  border-color: #9db4ff;
+  background: #e4ebff;
+  color: #1d2434;
+}
+
+html.site-light .macro-step-delete {
+  border-color: #e3a1a1;
+  background: #fbeaea;
+  color: #8f2020;
+}
+
+@media (prefers-color-scheme: light) {
+  html.site-auto .macro-step-row { border-color: #c9d1e2; background: #f4f6fb; }
+  html.site-auto .macro-chip,
+  html.site-auto .macro-chip-select { border-color: #c9d1e2; background: #eef1f8; }
+  html.site-auto .macro-chip-add { border-color: #9db4ff; background: #e4ebff; color: #1d2434; }
+  html.site-auto .macro-step-delete { border-color: #e3a1a1; background: #fbeaea; color: #8f2020; }
+}
+
+/* pill 未选中态：暗色是深灰底 + 浅灰字；浅色下若沿用深灰底会配 --text-dim 深灰字，
+ * 对比度不足。按 foxy 的浅色 pill 值翻成浅灰底。 */
+html.site-light .pill {
+  background: #eef0f3;
+  border-color: #d4d7dd;
+}
+
+@media (prefers-color-scheme: light) {
+  html.site-auto .pill { background: #eef0f3; border-color: #d4d7dd; }
+}
+
+/* ── 顶栏动作区 ──────────────────────────────────────────
+ * .topbar 自身横向铺满并画通栏底边线，内部 .topbar-main 才限宽居中 ——
+ * 与 main 的 `--content-max` + `--content-pad-x` 对齐，顶栏内容与下方卡片
+ * 左边界才会落在同一条竖线上（foxy 同款两层结构）。 */
 .topbar-main {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px 16px;
+  max-width: var(--content-max);
+  margin: 0 auto;
 }
 
 .topbar-title {
@@ -2287,8 +2991,8 @@ html.site-light .popup-entry-delete {
 }
 
 .site-theme-btn.active {
-  border-color: var(--primary);
-  color: var(--primary);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ── 悬浮工具（撤销/重做 + 回到顶部）────────────────────── */
@@ -2333,7 +3037,7 @@ html.site-light .popup-entry-delete {
   gap: 6px 14px;
   padding: 2px 0 6px;
   font-size: 12px;
-  color: var(--sub);
+  color: var(--text-dim);
   max-width: 1120px;
   margin: 0 auto;
 }
@@ -2357,7 +3061,7 @@ html.site-light .popup-entry-delete {
 }
 
 .preview-toolbar .pt-unit {
-  color: var(--sub);
+  color: var(--text-dim);
   margin-left: -2px;
 }
 
@@ -2436,7 +3140,7 @@ html.site-light .popup-entry-delete {
 }
 
 .json-issue-locatable:hover {
-  color: var(--primary);
+  color: var(--accent);
 }
 
 /* ── 预览按键：按压反馈 / 徽章 / 滑动提示 ───────────────── */
@@ -2468,7 +3172,7 @@ html.site-light .popup-entry-delete {
   display: flex;
   flex-wrap: wrap;
   gap: 6px 16px;
-  color: var(--sub);
+  color: var(--text-dim);
   font-size: 12px;
   padding: 4px 12px 8px;
 }
@@ -2566,7 +3270,7 @@ html.site-mode-light .cm-editor {
 }
 
 html.site-mode-light .cm-gutters {
-  background: var(--panel-inner);
+  background: var(--card-inner);
   color: #8a93a8;
   border-right-color: var(--border) !important;
 }
@@ -2581,7 +3285,7 @@ html.site-mode-light .cm-activeLineGutter {
 }
 
 html.site-mode-light .cm-content {
-  caret-color: var(--primary);
+  caret-color: var(--accent);
 }
 
 /* oneDark 令牌色在白底下的对比度修正 */
@@ -2612,4 +3316,490 @@ html.site-mode-dark .cm-content {
 textarea[readonly] {
   opacity: 0.72;
   cursor: not-allowed;
+}
+/* ── 符号 / Emoji / 颜文字面板页(移植自 foxy-editor 的「符号面板」页)───
+ * 结构与 f5a 其它页签一致:主卡片(工具条 + 路径提示 + 搜索/新建 + 分组列表)
+ * + JSON 卡片。几何口径与 .icon-theme-workbench 同款(单列、卡片间距 12px),
+ * 保证与既有页签切换时不跳。 */
+.symbol-workbench {
+  align-items: start;
+}
+
+.symbol-main-card {
+  min-width: 0;
+}
+
+.symbol-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 8px 0 6px;
+}
+
+.symbol-toolbar > label {
+  color: var(--text-dim);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card-inner);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.inline-check:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.inline-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.status-inline {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* 路径提示:三行小字,用来替掉 foxy 版里那段「外部存储目录」说明 */
+.symbol-path-hint {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: var(--card-inner);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.symbol-path-hint code {
+  font-size: 0.92em;
+  word-break: break-all;
+}
+
+.symbol-group-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.symbol-group-toolbar .mini-input {
+  min-width: 160px;
+  flex: 1 1 160px;
+}
+
+.symbol-group-toolbar .mini-input[type="search"] {
+  flex: 1 1 200px;
+}
+
+/* 选中条目后的操作条:固定在分组列表上方,不随滚动跑掉 */
+.symbol-entry-ops {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  margin: 4px 0 8px;
+  padding: 4px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+
+.sym-ops-hint {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-right: auto;
+}
+
+.symbol-group-list {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sym-group-card > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sym-group-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.def-badges {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.def-badges.st-warn {
+  color: var(--warn);
+}
+
+.sym-group-body {
+  display: grid;
+  gap: 8px;
+}
+
+/* 条目网格:与 App 端一致 —— multiLine=false 每行 6 格,true 每行 1 格。
+ * 行高固定 40px 对应 App 的 40dp,长条目在格内等比缩小而不是溢出。 */
+.sym-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.sym-entry-grid.multi-line {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sym-entry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.1;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: border-color var(--dur-fast), background var(--dur-fast);
+}
+
+.sym-entry-grid.multi-line .sym-entry {
+  justify-content: flex-start;
+  font-size: 14px;
+  padding: 2px 10px;
+}
+
+.sym-entry:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.sym-entry.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* 分组内部的工具条(新增条目 / 删除本组):注意类名只带一个 sym 前缀,
+ * 与页面级 .symbol-group-toolbar 是两个东西,别合并 */
+.sym-group-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sym-group-toolbar .mini-input {
+  flex: 1 1 200px;
+  min-width: 140px;
+}
+
+/* 窄屏与手机:条目网格降到 4 格,避免每格挤到认不出字 */
+@media (max-width: 640px) {
+  .sym-entry-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .status-inline {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 400px) {
+  .sym-entry-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* 浅色页面:条目格与提示卡在浅底上需要更深的分隔与更实的底 */
+html.site-light .sym-entry {
+  background: var(--card-inner);
+}
+
+html.site-light .sym-entry:hover,
+html.site-light .sym-entry.selected {
+  background: var(--accent-soft);
+}
+
+@media (prefers-color-scheme: light) {
+  html.site-auto .sym-entry {
+    background: var(--card-inner);
+  }
+
+  html.site-auto .sym-entry:hover,
+  html.site-auto .sym-entry.selected {
+    background: var(--accent-soft);
+  }
+}
+
+/* ---------- 易用性优化(2026-10-14):列表工具条 / 来源分组 / 空状态 ---------- */
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.list-toolbar .mini-input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.list-count {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.chip-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chip:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.list-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 13px;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.theme-group {
+  grid-column: 1 / -1;
+}
+
+.theme-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin: 10px 0 6px;
+}
+
+.theme-group-head::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.theme-group-count {
+  order: 3;
+  font-weight: 400;
+}
+
+.theme-group-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.theme-card .theme-card-title {
+  display: block;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.theme-card .theme-card-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ====== 随机主题(2026-10-15) ====== */
+.random-theme-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.random-theme-score {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card-inner);
+}
+
+.random-theme-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.random-palette-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.random-palette-title {
+  flex: 0 0 56px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.random-palette-cells {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.random-swatch {
+  display: inline-block;
+  cursor: default;
+}
+
+.random-swatch i {
+  display: block;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+}
+
+/* ── 符号面板预览（.sym-pv，由 js/symbol-preview.js 画）─────────────────────
+ * 几何全部由 JS 写成行内样式（规格来自 App 反编译，权威依据
+ * foxy/foxy-render-spec.md §8）。这里只放三类东西：
+ *   ① 行内样式表达不了的（滚动条隐藏、光标、选中态）
+ *   ② 配色取不到时的 CSS 兜底
+ *   ③ 说明文字块
+ * 改几何不要改这里 —— 改 js/symbol-preview.js 的 SPEC。 */
+.sym-pv-groups,
+.sym-pv-cells-wrap {
+  /* 隐藏原生滚动条：App 端两列是 ScrollView，指示是 Android 那套（细、贴边、
+   * 会淡出），网页这条粗白条压在深色面板底上尤其扎眼，看着就不像手机。
+   * 滚动能力保留（滚轮 / 触控板 / 手指都能滚）。 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.sym-pv-groups::-webkit-scrollbar,
+.sym-pv-cells-wrap::-webkit-scrollbar {
+  display: none;
+}
+
+.sym-pv {
+  /* 兜底底色；JS 取到主题色时会覆盖成行内样式。 */
+  background: var(--card-inner);
+}
+
+.sym-pv-group {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sym-pv-hotkey {
+  user-select: none;
+}
+
+.sym-pv-cell {
+  /* App 端格子在 non-multiLine 下是等比缩小画字，网页用截断近似；
+   * 无论哪条路都不该出现横向滚动条。 */
+  overflow-wrap: anywhere;
+}
+
+.sym-pv-empty {
+  padding: 18px 12px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+}
+
+.sym-pv-empty > div + div {
+  margin-top: 6px;
+}
+
+/* 说明文字块：放在预览面板**下方**，不压在面板上。
+ * 面板顶上就是分组列表，覆盖层会盖住组名（键盘预览那里顶上是空白顶栏区，
+ * 所以 #layout-preview-meta 的覆盖定位在那里没问题，这里不能照搬）。 */
+.sym-pv-notes {
+  margin: 8px auto 0;
+  max-width: var(--preview-keyboard-max-width, 576px);
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.sym-pv-notes .sym-pv-note + .sym-pv-note {
+  margin-top: 2px;
+}
+
+.layout-preview.layout-preview-symbol {
+  padding-top: 10px;
+  padding-bottom: 10px;
 }

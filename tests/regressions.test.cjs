@@ -43,6 +43,11 @@ function loadApp() {
   `;
   const source = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
   assert.ok(source.includes('\n  main();'));
+  // app.js 读 globalThis.F5A_BUILTIN_PRESETS / F5A_SYMBOL_DATA(app 内置预置),
+  // 生产页面靠 index.html 里的 <script> 先加载;测试里按同样顺序先执行这两份。
+  for (const file of ["builtin-presets.js", "symbol-data.js", "symbol-panel.js", "symbol-preview.js", "random-theme.js"]) {
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../js", file), "utf8"), context, { filename: file });
+  }
   vm.runInNewContext(source.replace('\n  main();', hook), context, { filename: 'app.js' });
   return { ...context.window.testApi, context, storage, element, flush: () => { while (tasks.length) tasks.shift()(); } };
 }

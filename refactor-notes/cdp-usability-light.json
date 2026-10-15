@@ -1,0 +1,449 @@
+{
+  "target": "D:\\GitHub\\fx2-rime\\f5a-see-me",
+  "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/index.html",
+  "errors": [
+    "[log] Access to fetch at 'file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-layout.json' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: chrome-experimental-site-token-provider, chrome-extension, chrome-untrusted, data, edge, http, https, isolated-app.",
+    "[log] Failed to load resource: net::ERR_FAILED",
+    "[log] Access to fetch at 'file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-popup-preset.json' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: chrome-experimental-site-token-provider, chrome-extension, chrome-untrusted, data, edge, http, https, isolated-app.",
+    "[log] Failed to load resource: net::ERR_FAILED",
+    "[log] Access to fetch at 'file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-layout.json' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: chrome-experimental-site-token-provider, chrome-extension, chrome-untrusted, data, edge, http, https, isolated-app.",
+    "[log] Failed to load resource: net::ERR_FAILED",
+    "[log] Access to fetch at 'file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-popup-preset.json' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: chrome-experimental-site-token-provider, chrome-extension, chrome-untrusted, data, edge, http, https, isolated-app.",
+    "[log] Failed to load resource: net::ERR_FAILED"
+  ],
+  "errorsDetailed": [
+    {
+      "kind": "cors-file-fetch",
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/index.html",
+      "text": "Access to fetch at 'file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-layout.json' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: c"
+    },
+    {
+      "kind": "local-resource-missing",
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-layout.json",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "kind": "cors-file-fetch",
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/index.html",
+      "text": "Access to fetch at 'file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-popup-preset.json' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol sche"
+    },
+    {
+      "kind": "local-resource-missing",
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-popup-preset.json",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "kind": "cors-file-fetch",
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/index.html",
+      "text": "Access to fetch at 'file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-layout.json' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: c"
+    },
+    {
+      "kind": "local-resource-missing",
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-layout.json",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    },
+    {
+      "kind": "cors-file-fetch",
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/index.html",
+      "text": "Access to fetch at 'file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-popup-preset.json' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol sche"
+    },
+    {
+      "kind": "local-resource-missing",
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-popup-preset.json",
+      "text": "Failed to load resource: net::ERR_FAILED"
+    }
+  ],
+  "failedRequests": [
+    {
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-layout.json",
+      "errorText": "net::ERR_FAILED",
+      "blockedReason": null
+    },
+    {
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-popup-preset.json",
+      "errorText": "net::ERR_FAILED",
+      "blockedReason": null
+    },
+    {
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-layout.json",
+      "errorText": "net::ERR_FAILED",
+      "blockedReason": null
+    },
+    {
+      "url": "file:///D:/GitHub/fx2-rime/f5a-see-me/data/default-popup-preset.json",
+      "errorText": "net::ERR_FAILED",
+      "blockedReason": null
+    }
+  ],
+  "errorsByKind": {
+    "cors-file-fetch": 4,
+    "local-resource-missing": 4
+  },
+  "jsExceptions": 0,
+  "data": {
+    "meta": {
+      "htmlClass": "site-mode-light site-light",
+      "siteTheme": "light",
+      "details": 17,
+      "detailsCard": 15,
+      "dialogs": 17,
+      "dialogTitlebar": 17,
+      "dialogToolbar": 13,
+      "buttons": 267,
+      "primaryBtns": 18,
+      "dangerBtns": 7,
+      "tabs": 5,
+      "panels": 5,
+      "scrollW": 1401,
+      "clientW": 1401,
+      "verticalOverflow": 0
+    },
+    "tokens": {
+      "--bg": "#f2f3f5",
+      "--bg-soft": "#e8eaed",
+      "--card": "#ffffff",
+      "--card-inner": "#f0f1f4",
+      "--border": "#d4d7dd",
+      "--text": "#1c1e22",
+      "--text-dim": "#5f656e",
+      "--accent": "#4c8dff",
+      "--danger": "#e2564f",
+      "--ok": "#48c26a",
+      "--warn": "#e2a33f",
+      "--radius": "10px",
+      "--content-max": "1360px",
+      "--space-md": "12px",
+      "--fs-base": "14px"
+    },
+    "key": {
+      ".topbar": {
+        "box": {
+          "x": 0,
+          "y": 0,
+          "w": 1401,
+          "h": 74
+        },
+        "bg": "rgba(0, 0, 0, 0)",
+        "color": "rgb(28, 30, 34)",
+        "radius": "0px"
+      },
+      ".topbar-main": {
+        "box": {
+          "x": 21,
+          "y": 10,
+          "w": 1360,
+          "h": 55
+        },
+        "bg": "rgba(0, 0, 0, 0)",
+        "color": "rgb(28, 30, 34)",
+        "radius": "0px"
+      },
+      "main": {
+        "box": {
+          "x": 21,
+          "y": 74,
+          "w": 1360,
+          "h": 1302
+        },
+        "bg": "rgba(0, 0, 0, 0)",
+        "color": "rgb(28, 30, 34)",
+        "radius": "0px"
+      },
+      ".tabs": {
+        "box": {
+          "x": 41,
+          "y": 628,
+          "w": 1320,
+          "h": 57
+        },
+        "bg": "rgb(242, 243, 245)",
+        "color": "rgb(28, 30, 34)",
+        "radius": "0px"
+      },
+      ".panel.active": {
+        "box": {
+          "x": 41,
+          "y": 707,
+          "w": 1320,
+          "h": 645
+        },
+        "bg": "rgba(0, 0, 0, 0)",
+        "color": "rgb(28, 30, 34)",
+        "radius": "0px"
+      },
+      ".layout-workbench": {
+        "box": {
+          "x": 41,
+          "y": 707,
+          "w": 1320,
+          "h": 645
+        },
+        "bg": "rgba(0, 0, 0, 0)",
+        "color": "rgb(28, 30, 34)",
+        "radius": "0px"
+      },
+      ".card": {
+        "box": {
+          "x": 41,
+          "y": 719,
+          "w": 674,
+          "h": 633
+        },
+        "bg": "rgb(255, 255, 255)",
+        "color": "rgb(28, 30, 34)",
+        "radius": "8px"
+      },
+      "details.card": {
+        "box": {
+          "x": 50,
+          "y": 740,
+          "w": 656,
+          "h": 436
+        },
+        "bg": "rgb(255, 255, 255)",
+        "color": "rgb(28, 30, 34)",
+        "radius": "8px"
+      },
+      ".keyboard-preview-panel": {
+        "box": {
+          "x": 41,
+          "y": 74,
+          "w": 1320,
+          "h": 554
+        },
+        "bg": "rgb(240, 241, 244)",
+        "color": "rgb(28, 30, 34)",
+        "radius": "8px"
+      }
+    },
+    "contrast": {
+      "body文本/页面底": 15.03,
+      "弱化文本/卡片底": 5.29,
+      "主按钮/按钮底": 3.2,
+      "tab激活/tab底": 3.2
+    },
+    "overflow": [],
+    "smallTargets": []
+  },
+  "interact": {
+    "steps": [
+      {
+        "name": "页签数",
+        "value": 5,
+        "labels": [
+          "布局编辑",
+          "主题编辑",
+          "弹出字符",
+          "图标主题",
+          "符号面板"
+        ]
+      },
+      {
+        "name": "切页签 tab-layout",
+        "ariaSelected": "true",
+        "tabindex": "0",
+        "panelActive": true,
+        "panelHeight": 645,
+        "cardCount": 4
+      },
+      {
+        "name": "切页签 tab-theme",
+        "ariaSelected": "true",
+        "tabindex": "0",
+        "panelActive": true,
+        "panelHeight": 1734,
+        "cardCount": 5
+      },
+      {
+        "name": "切页签 tab-popup",
+        "ariaSelected": "true",
+        "tabindex": "0",
+        "panelActive": true,
+        "panelHeight": 337,
+        "cardCount": 2
+      },
+      {
+        "name": "切页签 tab-icon-theme",
+        "ariaSelected": "true",
+        "tabindex": "0",
+        "panelActive": true,
+        "panelHeight": 2574,
+        "cardCount": 2
+      },
+      {
+        "name": "切页签 tab-symbols",
+        "ariaSelected": "true",
+        "tabindex": "0",
+        "panelActive": true,
+        "panelHeight": 4420,
+        "cardCount": 2
+      },
+      {
+        "name": "主题列表(全部)",
+        "cards": 21,
+        "groups": [
+          {
+            "source": "local",
+            "n": 9
+          },
+          {
+            "source": "app",
+            "n": 12
+          }
+        ],
+        "hint": "21 个主题"
+      },
+      {
+        "name": "分组小标题与卡片副标题",
+        "heads": [
+          "编辑器自带主题9",
+          "输入法内置主题12"
+        ],
+        "metaCount": 21,
+        "metaSample": [
+          "编辑器自带 · 浅色",
+          "编辑器自带 · 深色",
+          "编辑器自带 · 浅色"
+        ]
+      },
+      {
+        "name": "主题工具条",
+        "searchVisible": true,
+        "chipCount": 4
+      },
+      {
+        "name": "主题列表(输入法内置)",
+        "cards": 12,
+        "ariaPressed": "true",
+        "hint": "匹配 12 / 21 个主题"
+      },
+      {
+        "name": "主题列表(无匹配)",
+        "cards": 0,
+        "hasEmpty": true,
+        "emptyText": "没有匹配的主题。清除筛选"
+      },
+      {
+        "name": "主题列表(点清除筛选后)",
+        "cards": 21,
+        "filterValue": ""
+      },
+      {
+        "name": "图标主题筛选",
+        "before": 4,
+        "after": 0,
+        "hasEmpty": true
+      },
+      {
+        "name": "方向键导航",
+        "active": "tab-theme",
+        "focused": "tab-theme"
+      },
+      {
+        "name": "危险按钮文案",
+        "labels": [
+          "🗑",
+          "删除当前主题",
+          "删除当前图标主题",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除本组",
+          "删除按键",
+          "清除",
+          "清除裁剪",
+          "清除"
+        ]
+      },
+      {
+        "name": "无文字按钮",
+        "count": 0,
+        "sample": []
+      },
+      {
+        "name": "随机主题(点生成)",
+        "genFound": true,
+        "scoreHiddenAtStart": true,
+        "copyDisabledAtStart": true,
+        "cards": 21,
+        "cardsAfter": 22,
+        "activeName": "随机主题",
+        "scoreText": "美学评分 89/100(对比度 36、色相 18、饱和 20、明度 15) · split-comp · 深色 · Flat · 1 次尝试",
+        "scoreHiddenAfter": false,
+        "copyDisabledAfter": false,
+        "swatches": 28,
+        "sample": [
+          "keyBackground #2b4b36",
+          "keyPressed #306542",
+          "keyBorderStroke #4b845f"
+        ],
+        "statusText": "已生成:美学评分 89/100(对比度 36、色相 18、饱和 20、明度 15)"
+      },
+      {
+        "name": "随机主题(再生成一次)",
+        "cardsTwice": 22,
+        "scoreText": "美学评分 92/100(对比度 37、色相 23、饱和 17、明度 15) · triadic · 浅色 · Flat · 5 次尝试"
+      }
+    ],
+    "problems": []
+  },
+  "interactNote": "点开与筛选通过脚本触发,可证明事件接线与渲染分支生效;真实指针/触屏与视觉观感仍需人工确认"
+}

@@ -1,0 +1,57 @@
+// 只截「主题列表工具条 + 列表首屏」这一小块,便于目视核对(整页图缩放后细节看不清)。
+// 用法: node tests/shot-clip.cjs <输出名> <light|dark> <cssSelector> [tab]
+const { spawn } = require('node:child_process');
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const os = require('node:os');
+
+const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
+const ROOT = path.resolve(__dirname, '..');
+
+function getJson(url) {
+  return new Promise((res, rej) => {
+    http.get(url, (r) => { let b = ''; r.on('data', (d) => (b += d)); r.on('end', () => { try { res(JSON.parse(b)); } catch (e) { rej(e); } }); }).on('error', rej);
+  });
+}
+
+async function main() {
+  const name = process.argv[2] || 'clip';
+  const mode = process.argv[3] || 'light';
+  const sel = process.argv[4] || '.list-toolbar';
+  const tab = process.argv[5] || 'tab-theme';
+  const target = process.env.SHOT_TARGET ? path.resolve(process.env.SHOT_TARGET) : ROOT;
+  const indexUrl = 'file:///' + path.join(target, 'index.html').replace(/\\/g, '/');
+  const outPath = path.join(ROOT, 'refactor-notes', 'shots', `${name}-${mode}.png`);
+
+  const port = 9700 + (process.pid % 200);
+  const userDir = path.join(os.tmpdir(), 'f5a-clip-' + process.pid);
+  fs.rmSync(userDir, { recursive: true, force: true });
+  const edge = spawn(EDGE, ['--headless=new', '--disable-gpu', '--no-sandbox', `--remote-debugging-port=${port}`, `--user-data-dir=${userDir}`, '--window-size=1440,1200', '--force-device-scale-factor=1', 'about:blank'], { stdio: 'ignore' });
+  for (let i = 0; i < 60; i++) { try { await getJson(`http://127.0.0.1:${port}/json/version`); break; } catch (e) { await new Promise((r) => setTimeout(r, 250)); } }
+  const targets = await getJson(`http://127.0.0.1:${port}/json/list`);
+  const page = targets.find((t) => t.type === 'page');
+  const ws = new globalThis.WebSocket(page.webSocketDebuggerUrl);
+  await new Promise((r) => ws.addEventListener('open', r, { once: true }));
+  let id = 0; const pending = new Map();
+  ws.addEventListener('message', (ev) => { const m = JSON.parse(ev.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } });
+  const send = (method, params = {}) => new Promise((res) => { const mid = ++id; pending.set(mid, res); ws.send(JSON.stringify({ id: mid, method, params })); });
+  const evaluate = async (expr) => (await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true })).result?.result?.value;
+
+  await send('Page.enable');
+  await send('Page.navigate', { url: indexUrl });
+  await new Promise((r) => setTimeout(r, 2500));
+  await evaluate(`try{localStorage.setItem('f5a-editor-site-theme','${mode}')}catch(e){}`);
+  await send('Page.reload', { ignoreCache: false });
+  await new Promise((r) => setTimeout(r, 9000));
+  if (tab) { await evaluate(`(()=>{const b=document.querySelector('.tabs .tab[data-tab-target="${tab}"]');if(b)b.click();})()`); await new Promise((r) => setTimeout(r, 1200)); }
+  await evaluate('window.scrollTo(0,0)');
+
+  const rect = await evaluate(`(()=>{const e=document.querySelector('${sel}');if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height};})()`);
+  if (!rect) throw new Error('找不到选择器 ' + sel);
+  const shot = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true, clip: { x: rect.x, y: rect.y, width: rect.w, height: Math.min(rect.h, 900), scale: 2 } });
+  fs.writeFileSync(outPath, Buffer.from(shot.result.data, 'base64'));
+  console.log('written', outPath, fs.statSync(outPath).size, 'bytes; rect=', JSON.stringify(rect));
+  ws.close(); edge.kill();
+}
+main().catch((e) => { console.error(e); process.exit(1); });

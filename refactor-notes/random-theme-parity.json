@@ -1,0 +1,235 @@
+{
+  "generated_by": "tests/check-random-parity.cjs",
+  "source": {
+    "ThemeRandomizer.kt": {
+      "path": "app\\src\\main\\java\\org\\fcitx\\fcitx5\\android\\data\\theme\\ThemeRandomizer.kt",
+      "sha1": "863015625b7207f523a448047b4a0aee849f10d0"
+    },
+    "ThemeAestheticScore.kt": {
+      "path": "app\\src\\main\\java\\org\\fcitx\\fcitx5\\android\\data\\theme\\ThemeAestheticScore.kt",
+      "sha1": "4b099b2a44d69e46eaa3845af32a0a0049107986"
+    },
+    "js/random-theme.js": {
+      "sha1": "0736492e3b302c9b370f87cc7ae9e695ae49ec82"
+    }
+  },
+  "counts": {
+    "total": 42,
+    "passed": 42,
+    "failed": 0
+  },
+  "ktRandomCallCount": 20,
+  "jsRandomCallCount": 20,
+  "checks": [
+    {
+      "name": "MAX_ATTEMPTS = 100",
+      "ok": true,
+      "detail": "JS=100"
+    },
+    {
+      "name": "EARLY_STOP_SCORE = 88",
+      "ok": true,
+      "detail": "JS=88"
+    },
+    {
+      "name": "DEFAULT_THEME_NAME = \"Random Theme\"",
+      "ok": true,
+      "detail": "JS=Random Theme"
+    },
+    {
+      "name": "SCHEMES 五项且顺序一致",
+      "ok": true,
+      "detail": "[\"analogous\",\"complementary\",\"triadic\",\"split-comp\",\"mono\"]"
+    },
+    {
+      "name": "alpha 常量 0x1f / 0x33 / 0x80",
+      "ok": true,
+      "detail": "两侧一致"
+    },
+    {
+      "name": "公式:isDark 阈值",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:scheme 取样",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:baseHue 取样",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:analogous 偏移",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:baseSat",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:暗色 bgL",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:暗色 bgS 系数",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:暗色 keyBgS 系数",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:暗色 borderS 系数",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:暗色 accentL",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:亮色 bgL",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:亮色 keyTextL",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:亮色 borderL",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:accentTextL 阈值",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:keyPressed 偏移",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:specialKeyBackground 系数",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:altText 暗色 L",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:panel.toolbarPressed 暗色 L",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:pinner.secondaryTextColor 亮色 L",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:toastBackground 明暗 L",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:surfaceStyle 取样",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:评分对比满分",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:minRatio 惩罚",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:明度标准差 Home",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:jsRound 实现",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:relativeLuminance 分界",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:hslToRgb 纳模",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "公式:hslToHex 小写补零",
+      "ok": true,
+      "detail": "Kotlin=有 JS=有"
+    },
+    {
+      "name": "随机取数调用点数一致",
+      "ok": true,
+      "detail": "Kotlin random.nextDouble() ×20 vs JS next() ×20"
+    },
+    {
+      "name": "surfaceStyle 取票在色板之后",
+      "ok": true,
+      "detail": "Kotlin 3434<8595 JS 11201<13257"
+    },
+    {
+      "name": "暗/亮分支的 L 取值顺序一致",
+      "ok": true,
+      "detail": "Kotlin 与 JS 的暗色 L 顺序均为 bgL→keyBgL→keyTextL→accentL→panelBgL→pinnerBgL"
+    },
+    {
+      "name": "网站色键 28 个",
+      "ok": true,
+      "detail": "Kotlin=28"
+    },
+    {
+      "name": "网站色键集合一致",
+      "ok": true,
+      "detail": "Kotlin-only= JS-only="
+    },
+    {
+      "name": "Theme.Custom 具名颜色参数 21 个(20 不透明 + keyPressHighlight,另加可选 waterRipple)",
+      "ok": true,
+      "detail": "Kotlin=21 [\"backgroundColor\",\"barColor\",\"keyboardColor\",\"keyBackgroundColor\",\"keyTextColor\",\"candidateTextColor\",\"candidateLabelColor\",\"candidateCommentColor\",\"altKeyBackgroundColor\",\"altKeyTextColor\",\"accentKeyBackgroundColor\",\"accentKeyTextColor\",\"keyPressHighlightColor\",\"keyShadowColor\",\"popupBackgroundColor\",\"popupTextColor\",\"spaceBarColor\",\"dividerColor\",\"clipboardEntryColor\",\"genericActiveBackgroundColor\",\"genericActiveForegroundColor\"]"
+    },
+    {
+      "name": "20 个不透明字段与顺序完全一致",
+      "ok": true,
+      "detail": "Kotlin=[\"backgroundColor\",\"barColor\",\"keyboardColor\",\"keyBackgroundColor\",\"keyTextColor\",\"candidateTextColor\",\"candidateLabelColor\",\"candidateCommentColor\",\"altKeyBackgroundColor\",\"altKeyTextColor\",\"accentKeyBackgroundColor\",\"accentKeyTextColor\",\"keyShadowColor\",\"popupBackgroundColor\",\"popupTextColor\",\"spaceBarColor\",\"dividerColor\",\"clipboardEntryColor\",\"genericActiveBackgroundColor\",\"genericActiveForegroundColor\"]"
+    },
+    {
+      "name": "每条 20 字段映射的宾语色键一致",
+      "ok": true,
+      "detail": "Kotlin 侧对照 20 条"
+    },
+    {
+      "name": "keyPressHighlightColor / waterRippleColor 用带 alpha 的色键",
+      "ok": true,
+      "detail": "两侧均取 keyPressed / accentKeyPressed"
+    }
+  ]
+}
