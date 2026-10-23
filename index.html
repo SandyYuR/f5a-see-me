@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>fcitx5-android see me - Fcitx5 Android 可视化编辑器</title>
-  <link rel="stylesheet" href="./style.css?v=20261013040000">
+  <link rel="stylesheet" href="./style.css?v=20261023000000">
 </head>
 <body>
   <header class="topbar">
@@ -41,6 +41,9 @@
         <label title="预览输入合成时的按键，取消勾选恢复普通状态；不修改布局"><input type="checkbox" id="pt-composing"> 合成中</label>
         <label><input type="checkbox" id="pt-split"> 分体键盘</label>
         <label><input type="checkbox" id="pt-gboard-style"> Gboard 风格按钮</label>
+        <span class="preview-toolbar-sep" aria-hidden="true"></span>
+        <label title="预览 App 键盘上方的工具栏（左侧工具栏开关 + 中间按钮组 + 右侧收起键盘）；不修改布局"><input type="checkbox" id="pt-kb-toolbar"> 键盘工具栏</label>
+        <label id="pt-kb-toolbar-status-cell" title="预览点工具栏开关后升起的状态区（在 App 内整块替换键盘）"><input type="checkbox" id="pt-kb-toolbar-status"> 状态区</label>
         <span class="preview-toolbar-sep" aria-hidden="true"></span>
         <label id="pt-split-gap-cell" title="预览分体键盘时的中缝宽度（app：split_keyboard_gap_percent）"><input type="checkbox" id="pt-align-halves" checked> 中缝对齐</label>
         <span class="pt-cell"><label for="pt-split-gap">中缝</label><input id="pt-split-gap" class="num-input" type="number" min="5" max="60" step="1"><span class="pt-unit">%</span></span>
@@ -892,6 +895,7 @@
   <script src="./js/symbol-panel.js?v=20261014230000"></script>
   <script src="./js/symbol-preview.js?v=20261015050000"></script>
   <script src="./js/random-theme.js?v=20261015050000"></script>
-  <script src="./js/app.js?v=20261015050000"></script>
+  <script src="./js/toolbar-preview.js?v=20261023000000"></script>
+  <script src="./js/app.js?v=20261023000000"></script>
 </body>
 </html>

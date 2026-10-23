@@ -126,6 +126,27 @@
 
 **判断**:三项中两项下降但绝对值仍远高于 4.5(文本)与 3.0(UI 组件)门槛,不构成可读性退化。
 
+## 14. 键盘顶部工具栏预览（对齐 App KawaiiBar 与状态区）
+
+| | |
+|---|---|
+| **改前** | 布局预览只画按键与可选辅助栏；App 键盘正上方的工具栏（KeyboardPreviewUi.kt:649-711 + ToolbarMetrics.kt）与 toolbar_toggle 升起的状态区（StatusAreaWindow.kt）在 f5a 里完全看不到,预览与真机观感脱节。 |
+| **改后** | 预览卡片顶部按 App 真实结构画出工具栏一行:左 toolbar_toggle（三横点,system.toolbar_toggle） + 中间默认 6 键（撤销/重做/文本编辑/浮动键盘/剪贴板/亮色·暗色主题） + 右 hide_keyboard（下箭头,system.hide_keyboard）。新控件 #pt-kb-toolbar 与 #pt-kb-toolbar-status（「状态区」）随 pt-split 一并写入 f5a-editor-preview-split。勾选「状态区」后按 StatusAreaWindow 的语义替换键盘区内容而不改预览高度(键盘行仍留在 DOM 里当高度基准,visibility:hidden 仍参与布局;状态区叠在其上方并裁剪收口)。开关前后卡片外框尺寸与工具栏位置零位移,状态区条目比按键少,下方留白是正常的,画出 4 列面板（48 逻辑 px 圆底 + 图标 + 12px 标签,含固定末尾的 input_method_options）。 |
+| **几何依据** | 行高 40dp、按钮足迹 44dp、图标 20/22dp、圆角 12dp、间距 3dp（ToolbarMetrics.kt）；状态区条目高 96dp、圆 48dp、标签 12dp（StatusAreaEntryUi.kt）。工具栏宽度与键盘一致（min(100%,--preview-keyboard-max-width)）,380px 窄屏仍为 8 键且无溢出（按钮被 flex-shrink 压缩）。 |
+| **配色依据** | 由 app.js 注入:barColor（工具栏底）/altKeyTextColor（图标）/accentKeyBackgroundColor（激活）/强调色 25% 透明（文字按钮激活底）/keyboardColor（状态区底）/keyBackgroundColor + keyTextColor（状态区圆与标签）/genericActiveBackgroundColor + genericActiveForegroundColor（状态区激活）,依据 ToolButton.kt:132-135、:212-229 与 StatusAreaEntryUi.kt。keyBorder 开启时工具栏与状态区底透明（与 App fakeKawaiiBar.backgroundColor 一致）。 |
+| **实现** | 新文件 js/toolbar-preview.js（389 行）:SVG 只走 CSS mask-image（单色可染色）或 img（自带实色）,不 innerHTML 内联。js/app.js 新增 resolveToolbarPreviewColors / previewToolbarPxPerDp / toolbarPreviewIconFor / renderKeyboardToolbarPreviewHtml / renderKeyboardStatusAreaPreviewHtml,并让 renderLayoutPreview 在工具栏出现时把 --preview-top-bar-height 记为 0px（避免与真机预留重复留白。状态区展开改用 .kb-tb-status-stage / .kb-tb-status-underlay / .kb-tb-status-overlay 三层固定高度容器(style.css),键盘行不再从 DOM 消失,预览高度只由未展开时的键盘行决定）。站点浅色主题的 `html.site-light button:not(.layout-chip)`（style.css:2755-2798，特异性 (0,2,2)）会盖过纯类选择器，故工具栏按钮选择器改用 `#layout-preview .kb-tb-btn` 提升特异性，并显式重置 hover/focus 背景；否则浅色站点主题下按钮会渲染成白底药丸。 |
+| **证据** | 状态区固定高度回归:light 与 dark 下开关前后 rootY/rootH 均为 213/452,deltaH=0、回切后 deltaH=0、jsExceptions 0;截图 kb-status-height-before/after-light.png 与 -dark.png;一次性探针 tests/tb-probe5-row.cjs。截图 refactor-notes/shots/kb-tb-light.png、kb-tb-dark.png、kb-tb-status-light.png、kb-tb-status-dark.png、kb-tb-narrow-380.png、kb-tb-zoom3-light.png、kb-tb-row-light.png / kb-tb-row-dark.png（站点明/暗主题下按钮均为透明底，白底药丸已修）；探针 tests/cdp-probe.cjs（light:jsExceptions 0、problems 空）。13 个测试脚本全过,tests/static-audit.json 更新（id 365→369）。 |
+| **未覆盖** | 真实指针 hover/点击反馈——探针只验证静态几何与计算样式。 |
+## 15. 浅色站点主题「白底白字」按钮族对比度修复(标签页 / 筛选 chip / 新增行按钮)
+
+| | |
+|---|---|
+| **改前** | 站点浅色主题(`html.site-light`,以及 `html.site-auto` + `prefers-color-scheme:light`)下,三类配白字的控件被 `html.site-light button:not(.layout-chip) { background:#ffffff }`(style.css:2755-2797,特异性 (0,2,2))盖成白底,而它们自身的 `color:#fff` 仍然生效 → 文字与底同色、**完全隐形**:1 选中标签页 `.tab.active`(0,2,0);2 主题来源筛选 chip `.chip[aria-pressed="true"]`(0,2,0);3 布局编辑「新增行」按钮 `.add-row-button`(0,1,0)。暗色主题正常(深底),所以只在浅色下暴露。根因与作者已修的 `.primary`/`.danger` 同类(:2752-2754 注释自述),只是这三处漏写赢回规则。 |
+| **改后** | 三条各自把蓝底赢回并显式覆盖 `:hover`(否则悬停掉回浅灰底、白字再次隐形):`.tab.active` → (0,3,1)/(0,4,1);`.chip[aria-pressed="true"]` → (0,3,0)/(0,4,0);`button.add-row-button` → (0,2,2)/(0,3,2)。`site-auto` 各在 `@media (prefers-color-scheme: light)` 内双写。style.css:2830-2853。 |
+| **证据** | 一次性计算样式探针(tests/contrast-probe.cjs,已删):light 改前 chip/add-row 均为 `bg rgb(255,255,255) + color rgb(255,255,255)`;改后均为 `bg rgb(76,141,255) + color rgb(255,255,255)`。dark 改前改后均 accent,无回归。截图 refactor-notes/shots/chipfix-light.png(选中 chip「全部」蓝底白字)、tabfix-light.png 与 tabfix-dark.png(选中「布局编辑」蓝底白字;tabfix-dark 与修复前字节完全相同)。 |
+| **未覆盖** | 真人指针的 hover/focus-visible 观感——只静态验证了计算样式与 :hover 规则命中。 |
+
+
 ---
 
 ## 附:本清单未覆盖的项

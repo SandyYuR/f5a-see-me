@@ -2824,11 +2824,32 @@ html.site-light .inner-card > summary { background: #eef0f3; color: #1c1e22; }
   html.site-auto .inner-card > summary { background: #eef0f3; color: #1c1e22; }
 }
 
-/* 标签页：未选中项给浅灰底，选中白底 + 深字，把对比拉开
+/* 标签页：未选中项给浅灰底，选中蓝底白字，把对比拉开
  * （否则未选中会被上面的白底 button 规则盖成全白，与选中只差字色字重） */
 html.site-light .tab:not(.active) { background: #eef0f3; }
+/* ⚠️ 选中项必须把蓝底赢回来:`.tab.active` 的 (0,2,0) 低于 `html.site-light button`
+ * 的 (0,2,2),不写就是白底 + #fff 字 → 文字完全隐形(与上方「按钮族 primary」同病)。
+ * 提升到 (0,3,1) 稳压,并显式覆盖 :hover(否则 hover 变浅灰底,白字仍隐形)。 */
+html.site-light .tab.active,
+html.site-light .tab.active:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
 @media (prefers-color-scheme: light) {
   html.site-auto .tab:not(.active) { background: #eef0f3; }
+  html.site-auto .tab.active,
+  html.site-auto .tab.active:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+}
+
+/* 同类白底白字补全:`.chip[aria-pressed="true"]`(0,2,0)与 `.add-row-button`(0,1,0)都配白字,
+ * 会被上方 (0,2,2) 的浅色 `html.site-light button` 白底规则压成白底白字,文字完全隐形。
+ * 各自把底色赢回来;:hover 一并写,否则悬停时会掉回浅灰底、白字再次隐形。 */
+html.site-light .chip[aria-pressed="true"],
+html.site-light .chip[aria-pressed="true"]:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+html.site-light button.add-row-button,
+html.site-light button.add-row-button:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+@media (prefers-color-scheme: light) {
+  html.site-auto .chip[aria-pressed="true"],
+  html.site-auto .chip[aria-pressed="true"]:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  html.site-auto button.add-row-button,
+  html.site-auto button.add-row-button:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
 }
 
 /* 对话框三件套 */
@@ -3802,4 +3823,54 @@ html.site-light .sym-entry.selected {
 .layout-preview.layout-preview-symbol {
   padding-top: 10px;
   padding-bottom: 10px;
+}
+
+/* ── 键盘顶部工具栏预览(f5a-toolbar-preview.js)─────────────────────────────
+   对应 app fx-rime-only 的 KawaiiBar(键盘上方一行)与状态区面板。
+   几何/配色由 js/toolbar-preview.js 内联写死,这里只负责形状与排版兜底。 */
+.kb-tb-host {
+  width: min(100%, var(--preview-keyboard-max-width, 576px));
+  margin: 0 auto 8px;
+  box-sizing: border-box;
+}
+.kb-tb-host-status { margin-bottom: 0; }
+.kb-tb-shell { width: 100%; box-sizing: border-box; overflow: hidden; }
+.kb-tb-row { width: 100%; }
+.kb-tb-group { overflow: hidden; }
+#layout-preview .kb-tb-btn {
+  appearance: none; -webkit-appearance: none;
+  border: 0; padding: 0; margin: 0;
+  background: transparent; color: inherit;
+  font: inherit; font-weight: 500;
+  display: inline-flex; align-items: center; justify-content: center;
+  overflow: hidden; box-sizing: border-box; cursor: default;
+}
+/* 站点的 html.site-light / site-auto 按钮白底规则(style.css:2755-2798,
+   特异性 (0,2,2))会盖过纯类选择器,工具栏按钮必须用 id 提升特异性压回透明底,
+   否则浅色站点主题下会渲染成白底药丸(与 App 的无底色 ToolButton 不符)。 */
+#layout-preview .kb-tb-btn:hover,
+#layout-preview .kb-tb-btn:focus-visible {
+  background: transparent;
+}
+.kb-tb-label {
+  display: block; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 500; line-height: 1.2;
+}
+.kb-tb-mask, .kb-tb-img, .kb-tb-dot { flex: 0 0 auto; display: block; pointer-events: none; }
+.kb-tb-dot { border: 2px solid currentColor; border-radius: 50%; box-sizing: border-box; opacity: .5; }
+/* 状态区展开：键盘行留作高度基准（visibility:hidden 仍占位），状态区叠在上方并裁剪，
+   保证勾选前后预览高度与整体版式不位移；状态区条目少，下方留白是正常的。 */
+.kb-tb-status-stage { position: relative; width: 100%; }
+.kb-tb-status-underlay { visibility: hidden; pointer-events: none; }
+.kb-tb-status-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; }
+.kb-tb-status { width: 100%; }
+.kb-tb-cell { display: flex; flex-direction: column; align-items: center; overflow: hidden; min-width: 0; }
+.kb-tb-circle {
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto; border-radius: 50%; box-sizing: border-box;
+}
+.kb-tb-celllabel {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; text-align: center; line-height: 1.2;
 }

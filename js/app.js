@@ -528,7 +528,7 @@
   const iconThemeToolbarSlots = [
     "toolbar.undo", "toolbar.redo", "toolbar.cursor_move",
     "toolbar.floating_toggle", "toolbar.clipboard", "toolbar.more",
-    "toolbar.language_switch", "toolbar.theme", "toolbar.icon_theme",
+    "toolbar.language_switch", "toolbar.theme", "toolbar.random_theme", "toolbar.icon_theme",
     "toolbar.input_method_options", "toolbar.reload_config",
     "toolbar.virtual_keyboard", "toolbar.one_handed_keyboard",
     "toolbar.browse_user_data", "toolbar.settings_global",
@@ -588,6 +588,10 @@
     editingSplit: false,
      previewSplit: false,
      previewComposing: false,
+    // 键盘顶部工具栏预览（对照 app fx-rime-only 的 KawaiiBar）。默认显示；
+    // 状态区是 toolbar_toggle 升起的独立窗口，默认关闭。
+    previewKbToolbar: true,
+    previewKbToolbarStatus: false,
     suppressLayoutJsonInput: false,
     wasmReady: false,
     wasmInitPromise: null,
@@ -4478,7 +4482,14 @@
     root.style.setProperty('--preview-keyboard-max-width', `${keyboardRenderWidth}px`);
     root.style.setProperty('--preview-side-padding', `${previewMetrics?.sidePadding || 0}px`);
     root.style.setProperty('--preview-bottom-padding', `${previewMetrics?.bottomPadding || 0}px`);
-    root.style.setProperty('--preview-top-bar-height', `${previewMetrics?.topBarHeight || 0}px`);
+    const kbToolbarHtml = state.previewKbToolbar !== false
+      ? renderKeyboardToolbarPreviewHtml(previewMetrics, keyboardRenderWidth)
+      : "";
+    const kbStatusAreaHtml = kbToolbarHtml && state.previewKbToolbarStatus
+      ? renderKeyboardStatusAreaPreviewHtml(previewMetrics, keyboardRenderWidth)
+      : "";
+    // 已画出真实工具栏时不再为真机 kawaiiBarHeightPx 预留空白，避免重复留白。
+    root.style.setProperty('--preview-top-bar-height', kbToolbarHtml ? "0px" : `${previewMetrics?.topBarHeight || 0}px`);
     const rowsHtml = rows.map((row, rowIndex) => {
       const rowHeight = Math.max(
         24,
@@ -4538,18 +4549,26 @@
         return slotHtml;
       }).join("")}</div></div>`;
     }).join("");
-    root.innerHTML = buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg, auxGeometry);
+    // 状态区展开只替换键盘区的内容、绝不改变预览高度：键盘行继续留在 DOM 里当高度基准
+    // （visibility:hidden 仍参与布局），状态区叠在它上方并裁剪收口。因为高度由未展开时的
+    // 键盘行决定，所以勾选前后卡片外框尺寸、工具栏位置都不位移；状态区条目比按键少，
+    // 下方留白是正常结果，不为了填满而拉伸按键。
+    const keyboardAreaHtml = buildAuxBarPreviewHtml(auxBarConfig, auxBarKeys, rowsHtml, cfg, auxGeometry);
+    root.innerHTML = kbToolbarHtml + (kbStatusAreaHtml
+      ? `<div class="kb-tb-status-stage"><div class="kb-tb-status-underlay" aria-hidden="true">${keyboardAreaHtml}</div><div class="kb-tb-status-overlay">${kbStatusAreaHtml}</div></div>`
+      : keyboardAreaHtml);
     requestAnimationFrame(() => {
       pinPreviewContainerWidth();
       syncPreviewBlurMaskGeometry();
       fitLayoutPreviewText();
     });
     const height = getHeightOverride();
+    const kbMeta = kbToolbarHtml ? `，键盘工具栏预览${state.previewKbToolbarStatus ? " + 状态区(替换键盘)" : ""}` : "";
     const auxMeta = auxBarConfig ? `，辅助选择栏 ${auxBarConfig.position}${auxBarConfig.position !== "above_preedit" ? ` ${Math.round(auxBarConfig.sizePercent)}%` : ""}` : "";
     const splitMeta = splitRender
       ? `，分体布局（横向扩展，中缝 ${Math.round(splitGapFrac * 100)}%${splitAlignHalves ? "" : "，不强制对齐"}）`
       : "";
-    setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${state.previewComposing ? "，合成中" : ""}${height ? `，键盘高度 ${height}%` : ""}${splitMeta}${auxMeta}`, "");
+    setStatus("layout-preview-meta", `${entryKey(state.selectedBase, state.selectedSubmode)}${state.previewComposing ? "，合成中" : ""}${height ? `，键盘高度 ${height}%` : ""}${splitMeta}${auxMeta}${kbMeta}`, "");
     renderThemeSupplementPreview();
     updateFixedChromeMetrics();
   }
@@ -10518,6 +10537,9 @@
     "toolbar.cursor_move": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="m17,16 l4,-4L17,8Z M7,8 l-4,4 4,4z M8,3v2h3.0137V19H8v2h3.0137,2H16V19H13.0137V5H16V3h-2.9863,-2z"/></svg>`,
     "toolbar.floating_toggle": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20,3L4,3c-1.1,0 -1.99,0.9 -1.99,2L2,15c0,1.1 0.9,2 2,2h16c1.1,0 2,-0.9 2,-2L22,5c0,-1.1 -0.9,-2 -2,-2zM11,6h2v2h-2L11,6zM11,9h2v2h-2v-2zM8,8h2v2L8,10L8,8zM8,11h2v2L8,13v-2zM7,13L5,13v-2h2v2zM7,10L5,10L5,8h2v2zM16,17L8,17v-2h8v2zM16,11h-2v-2h2v2zM16,8h-2L14,6h2v2zM19,11h-2v-2h2v2zM19,8h-2L17,6h2v2z"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4,20 L20,20"/></svg>`,
     "toolbar.clipboard": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>`,
+    "toolbar.theme_toggle": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7.5,2C5.71,3.15 4.5,5.18 4.5,7.5C4.5,9.82 5.71,11.85 7.53,13C4.46,13 2,10.54 2,7.5A5.5,5.5 0,0,1 7.5,2M19.07,3.5L20.5,4.93L4.93,20.5L3.5,19.07L19.07,3.5M12.89,5.93L11.41,5L9.97,6L10.39,4.3L9,3.24L10.75,3.12L11.33,1.47L12,3.1L13.73,3.13L12.38,4.26L12.89,5.93M9.59,9.54L8.43,8.81L7.31,9.59L7.65,8.27L6.56,7.44L7.92,7.35L8.37,6.06L8.88,7.33L10.24,7.36L9.19,8.23L9.59,9.54M19,13.5A5.5,5.5 0,0,1 13.5,19C12.28,19 11.15,18.6 10.24,17.93L17.93,10.24C18.6,11.15 19,12.28 19,13.5M14.6,20.08L17.37,18.93L17.13,22.28L14.6,20.08M18.93,17.38L20.08,14.61L22.28,17.15L18.93,17.38M20.08,12.42L18.94,9.64L22.28,9.88L20.08,12.42M9.63,18.93L12.4,20.08L9.87,22.27L9.63,18.93Z"/></svg>`,
+    /* IconTheme.kt TOOLBAR_SLOTS 有 toolbar.random_theme,f5a 之前缺;用一个 24 viewBox 的简化「骰子 + 星」代次,不必照抄 App 的 512 viewBox 多 path。 */
+    "toolbar.random_theme": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 2v14h14V5H5zm3 1.4a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zm8 0a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zm-4 4a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zm-4 4a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2zm8 0a1.6 1.6 0 1 1 0 3.2 1.6 1.6 0 0 1 0-3.2z"/></svg>`,
     "toolbar.more": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>`,
     "toolbar.language_switch": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95a15.65 15.65 0 00-1.38-3.56A8.03 8.03 0 0118.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 015.08 16zm2.95-8H5.08a7.99 7.99 0 014.33-3.56A15.65 15.65 0 008.03 8zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2s.07-1.35.16-2h4.68c.09.65.16 1.32.16 2s-.07 1.34-.16 2z"/></svg>`,
     "toolbar.theme": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 22C6.49 22 2 17.51 2 12S6.49 2 12 2s10 4.04 10 9c0 3.31-2.69 6-6 6h-1.77c-.28 0-.5.22-.5.5 0 .12.05.23.13.33.41.47.64 1.06.64 1.67A2.5 2.5 0 0112 22zm0-18c-4.41 0-8 3.59-8 8s3.59 8 8 8c.28 0 .5-.22.5-.5a.54.54 0 00-.14-.35c-.41-.46-.63-1.05-.63-1.65a2.5 2.5 0 012.5-2.5H16c2.21 0 4-1.79 4-4 0-3.86-3.59-7-8-7z"/><circle cx="6.5" cy="11.5" r="1.5" fill="currentColor"/><circle cx="9.5" cy="7.5" r="1.5" fill="currentColor"/><circle cx="14.5" cy="7.5" r="1.5" fill="currentColor"/><circle cx="17.5" cy="11.5" r="1.5" fill="currentColor"/></svg>`,
@@ -10531,7 +10553,8 @@
     "toolbar.settings_ime": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95a15.65 15.65 0 00-1.38-3.56A8.03 8.03 0 0118.92 8zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2s.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56A7.99 7.99 0 015.08 16z"/></svg>`,
     "toolbar.edit_layout": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M20 5H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 12H4V7h16v10zM7 8H5v3h2V8zm3 0H8v3h2V8zm3 5h-2v3h2v-3zm3 0h-2v3h2v-3zm3 0h-2v3h2v-3z"/></svg>`,
     "toolbar.edit_fontset": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M9.93 13.5h4.14L12 7.98 9.93 13.5zM20 2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-4.05 16.5l-1.14-3H9.17l-1.12 3H5.96l5.11-13h1.86l5.11 13h-2.09z"/></svg>`,
-    "system.toolbar_toggle": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z"/></svg>`,
+    /* App KeyboardPreviewUi.kt:653-670 的 toolbar_toggle 默认图标是 more_horiz(三个横点),不是下箭头。 */
+    "system.toolbar_toggle": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>`,
     "system.hide_keyboard": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg>`,
     "system.voice_input": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>`
   };
@@ -11542,6 +11565,8 @@
         if (typeof raw.alignHalves === "boolean") state.themeAppSync.splitAlignHalves = raw.alignHalves;
         if (typeof raw.previewSplit === "boolean") state.previewSplit = raw.previewSplit;
         if (typeof raw.gboardStyle === "boolean") state.themeAppSync.gboardStyle = raw.gboardStyle;
+        if (typeof raw.kbToolbar === "boolean") state.previewKbToolbar = raw.kbToolbar;
+        if (typeof raw.kbToolbarStatus === "boolean") state.previewKbToolbarStatus = raw.kbToolbarStatus;
       }
     } catch (_) {}
   }
@@ -11552,9 +11577,107 @@
         gapPercent: Math.round(Number(state.themeAppSync.splitGapPercent) || 20),
         alignHalves: state.themeAppSync.splitAlignHalves !== false,
         previewSplit: !!state.previewSplit,
-        gboardStyle: !!state.themeAppSync.gboardStyle
+        gboardStyle: !!state.themeAppSync.gboardStyle,
+        kbToolbar: !!state.previewKbToolbar,
+        kbToolbarStatus: !!state.previewKbToolbarStatus
       }));
     } catch (_) {}
+  }
+
+  // ── 键盘顶部工具栏预览(对照 app fx-rime-only 的 KawaiiBar / StatusAreaWindow)──
+  // 配色取自 ToolButton.kt：图标/文字 altKeyTextColor、激活 accentKeyBackgroundColor、
+  // 文字按钮激活底 = 强调色 0x3f alpha（约 25%）；状态区取自 StatusAreaEntryUi.kt。
+  function resolveToolbarPreviewColors() {
+    const accent = (Number(resolveThemeTokenColor("accentKeyBackgroundColor")) || 0) >>> 0;
+    const activeSoft = ((accent & 0x00ffffff) | (0x3f << 24)) >>> 0;
+    return {
+      bar: argbToCss(resolveThemeTokenColor("barColor")),
+      icon: argbToCss(resolveThemeTokenColor("altKeyTextColor")),
+      active: argbToCss(accent),
+      activeSoft: argbToCss(activeSoft),
+      panel: argbToCss(resolveThemeTokenColor("keyboardColor")),
+      statusBg: argbToCss(resolveThemeTokenColor("barColor")),
+      statusCircle: argbToCss(resolveThemeTokenColor("keyBackgroundColor")),
+      statusActiveBg: argbToCss(resolveThemeTokenColor("genericActiveBackgroundColor")),
+      statusFg: argbToCss(resolveThemeTokenColor("keyTextColor")),
+      statusActiveFg: argbToCss(resolveThemeTokenColor("genericActiveForegroundColor")),
+      statusLabel: argbToCss(resolveThemeTokenColor("keyTextColor"))
+    };
+  }
+
+  // 预览是等比缩放的；pxPerDp 用真机量测的 maxWidth/(screenWidth/density)；
+  // 没有 IME 量测时退回 keyboardRenderWidth/LIVE_PREVIEW_KEYBOARD_MAX_WIDTH。
+  function previewToolbarPxPerDp(previewMetrics, keyboardRenderWidth) {
+    const raw = state.themeAppSync.previewMetrics;
+    const screenWidth = Number(raw?.screenWidthPx) || 0;
+    const density = Number(raw?.density) || 0;
+    if (previewMetrics && screenWidth > 0 && density > 0) {
+      return Math.max(0.05, previewMetrics.maxWidth / (screenWidth / density));
+    }
+    const unit = Math.max(1, Number(keyboardRenderWidth) || LIVE_PREVIEW_KEYBOARD_MAX_WIDTH);
+    return unit / LIVE_PREVIEW_KEYBOARD_MAX_WIDTH;
+  }
+
+  // 图标来源与图标主题面板一致：内联 SVG → svg；本地 blob/data → url；
+  // file: 走 fetchIconFilePreview 的缓存，未命中先请求再等下一次渲染；
+  // 都没有则回落内置默认矢量（与 App 的 defaultIcon 对齐）。
+  function toolbarPreviewIconFor(button) {
+    if (!button) return null;
+    const slot = button.slot;
+    let entry = null;
+    try { entry = currentIconThemeEntry(); } catch (_) {}
+    const raw = entry && entry.icons ? entry.icons[slot] : null;
+    if (typeof raw === "string" && raw.trim()) {
+      const value = raw.trim();
+      if (isInlineSvgValue(value)) return { kind: "svg", value };
+      if (isInlineXmlDrawableValue(value)) {
+        const svg = vectorDrawableToSvg(value);
+        if (svg) return { kind: "svg", value: svg };
+      }
+      if (isLocalIconRef(value)) return { kind: "url", value };
+      if (isFileIconRef(value)) {
+        const themeName = entry && entry.name ? entry.name : null;
+        const cached = themeName ? iconThemePreviewCache.get(`${themeName}:${slot}`) : null;
+        if (cached) return { kind: "url", value: cached };
+        if (themeName) { try { fetchIconFilePreview(themeName, slot); } catch (_) {} }
+        return null;
+      }
+      return { kind: "text", value };
+    }
+    const fallback = DEFAULT_ICON_SVGS[slot];
+    if (fallback) return { kind: "svg", value: fallback };
+    return null;
+  }
+
+  function renderKeyboardToolbarPreviewHtml(previewMetrics, keyboardRenderWidth) {
+    const TB = window.F5aToolbarPreview;
+    if (!TB || state.previewKbToolbar === false) return "";
+    const heightRaw = Number(previewMetrics?.topBarHeight) || 0;
+    const html = TB.render({
+      show: true,
+      keyBorder: !!state.themeAppSync.borderEnabled,
+      heightPx: heightRaw > 0 ? heightRaw : 0,
+      pxPerDp: previewToolbarPxPerDp(previewMetrics, keyboardRenderWidth),
+      colors: resolveToolbarPreviewColors(),
+      iconFor: toolbarPreviewIconFor,
+      activeIds: []
+    });
+    return html ? `<div class="kb-tb-host">${html}</div>` : "";
+  }
+
+  function renderKeyboardStatusAreaPreviewHtml(previewMetrics, keyboardRenderWidth) {
+    const TB = window.F5aToolbarPreview;
+    if (!TB || typeof TB.renderStatusArea !== "function") return "";
+    if (state.previewKbToolbar === false || !state.previewKbToolbarStatus) return "";
+    const html = TB.renderStatusArea({
+      keyBorder: !!state.themeAppSync.borderEnabled,
+      heightPx: 0,
+      pxPerDp: previewToolbarPxPerDp(previewMetrics, keyboardRenderWidth),
+      colors: resolveToolbarPreviewColors(),
+      iconFor: toolbarPreviewIconFor,
+      activeIds: []
+    });
+    return html ? `<div class="kb-tb-host kb-tb-host-status">${html}</div>` : "";
   }
 
   function syncPreviewToolbarUi() {
@@ -11606,6 +11729,15 @@
     }
     const gapCell = el("pt-split-gap-cell");
     if (gapCell) gapCell.style.opacity = splitControlsEnabled ? "" : "0.45";
+    const kbToolbar = el("pt-kb-toolbar");
+    if (kbToolbar) { kbToolbar.checked = state.previewKbToolbar !== false; kbToolbar.disabled = textEditor; }
+    const kbToolbarStatus = el("pt-kb-toolbar-status");
+    if (kbToolbarStatus) {
+      kbToolbarStatus.checked = state.previewKbToolbar !== false && !!state.previewKbToolbarStatus;
+      kbToolbarStatus.disabled = textEditor || state.previewKbToolbar === false;
+    }
+    const kbToolbarStatusCell = el("pt-kb-toolbar-status-cell");
+    if (kbToolbarStatusCell) kbToolbarStatusCell.style.opacity = (!textEditor && state.previewKbToolbar !== false) ? "" : "0.45";
   }
 
   function setupPreviewToolbar() {
@@ -11671,6 +11803,18 @@
       const n = Math.round(Number(e.target.value) || 20);
       state.themeAppSync.splitGapPercent = Math.min(60, Math.max(5, n));
       saveLocalSplitPrefs();
+      renderLayoutPreview();
+    });
+    el("pt-kb-toolbar")?.addEventListener("change", (e) => {
+      state.previewKbToolbar = !!e.target.checked;
+      saveLocalSplitPrefs();
+      syncPreviewToolbarUi();
+      renderLayoutPreview();
+    });
+    el("pt-kb-toolbar-status")?.addEventListener("change", (e) => {
+      state.previewKbToolbarStatus = !!e.target.checked;
+      saveLocalSplitPrefs();
+      syncPreviewToolbarUi();
       renderLayoutPreview();
     });
     loadLocalSplitPrefs();

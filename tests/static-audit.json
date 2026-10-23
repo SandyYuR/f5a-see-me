@@ -9,20 +9,20 @@
     "extraClose": 0
   },
   "ids": {
-    "total": 365,
+    "total": 369,
     "duplicates": []
   },
   "jsIdRefs": {
-    "literalCount": 275,
+    "literalCount": 279,
     "byKind": {
-      "el": 271,
+      "el": 276,
       "getElementById": 2,
       "querySelectorHash": 2
     },
     "kindNote": "三种写法分别计数；合集的并集 literalCount 小于三者之和（同一 id 被多种写法引用只算一次）",
     "templateExprCount": 1,
     "templateNote": "模板字面量拼接的 id 无法静态解析，不计入 literalCount",
-    "dynamicIdLiterals": 368,
+    "dynamicIdLiterals": 372,
     "missingAfterDynamicDeduct": [
       "layout-copy-source"
     ]
@@ -36,7 +36,7 @@
       "varTable": 7,
       "note": "三者并集为 injected；分项之和可能大于并集（同一变量多种注入方式）"
     },
-    "referenced": 66,
+    "referenced": 67,
     "dangling": [],
     "danglingWithFallback": [
       "--preview-key-shadow"
