@@ -57,6 +57,7 @@
   const LONG_IMAGE_PREVIEW_KEYBOARD_MAX_WIDTH = 576;
   const LIVE_PREVIEW_KEYBOARD_MAX_WIDTH = 576;
   const LIVE_PREVIEW_SPLIT_MAX_WIDTH = 1228;
+  let layoutWorkspace = null;
   const DEFAULT_SUBMODE = "default";
   const META_KEY = "__meta__";
   // 分体布局变体条目（app fx-rime-only 分支）：写在子布局 map 内的 "__variant__:split" 键，
@@ -2474,6 +2475,7 @@
   }
 
   function setActiveTab(targetId) {
+    if (layoutWorkspace && !layoutWorkspace.apply()) return;
     const buttons = Array.from(document.querySelectorAll(".tabs .tab"));
     const previousTab = state.activeTab;
     state.activeTab = targetId;
@@ -2487,6 +2489,7 @@
     document.querySelectorAll("main .panel").forEach((panel) => {
       panel.classList.toggle("active", panel.id === targetId);
     });
+    layoutWorkspace?.setTab(targetId);
     updateFixedChromeMetrics();
     syncJsonEditorHeight();
     syncThemeJsonHeight();
@@ -2514,6 +2517,7 @@
       syncPreviewPanelTitle(targetId);
       renderLayoutPreview();
     }
+    if (layoutWorkspace && targetId !== "tab-symbols" && previousTab !== "tab-symbols") renderLayoutPreview();
   }
 
   /* 预览面板的标题随内容变：切到符号面板页签时它不再是「布局预览」。 */
@@ -4627,10 +4631,16 @@
     if (rowAttr === null || keyAttr === null || rowAttr === "" || keyAttr === "") return false;
     const rowIndex = Number(rowAttr);
     const keyIndex = Number(keyAttr);
+    // A separately configured split preview must edit the split source it displays.
+    if (state.previewSplit && !state.editingSplit && getVariantRows(state.selectedBase, state.selectedSubmode)) {
+      if (layoutWorkspace && !layoutWorkspace.apply()) return false;
+      state.editingSplit = true;
+      syncLayoutUiFromState();
+    }
     const rows = getRows();
     if (!Number.isInteger(rowIndex) || !Number.isInteger(keyIndex)) return false;
     if (!rows[rowIndex] || keyIndex < 0 || keyIndex >= rows[rowIndex].length) return false;
-    openKeyEditorDialog(rowIndex, keyIndex, false);
+    openLayoutKeyDialog(rowIndex, keyIndex, false);
     return true;
   }
 
@@ -5034,7 +5044,7 @@
       if (state.dragRow === rowIndex) block.classList.add("dragging");
       block.dataset.rowIndex = String(rowIndex);
       block.innerHTML = `
-        <span class="row-drag-handle" title="拖拽行排序">☰</span>
+        <span class="row-drag-handle" title="拖拽第 ${rowIndex + 1} 行排序">${rowIndex + 1}<span aria-hidden="true">⠿</span></span>
         <div class="chip-list key-list" data-row-index="${rowIndex}" title="按住空白处可上下拖拽调整行顺序"></div>
         <button class="row-add-key" title="新增按键">+</button>
         <button class="row-delete" title="删除行">🗑</button>
@@ -5118,6 +5128,7 @@
   function moveRow(from, to, shouldSync = true) {
     const rows = getRows();
     if (from < 0 || to < 0 || from >= rows.length || to >= rows.length || from === to) return null;
+    layoutWorkspace?.clear();
     const [row] = rows.splice(from, 1);
     rows.splice(to, 0, row);
     if (shouldSync) syncLayoutUiFromState();
@@ -5129,6 +5140,7 @@
     if (from < 0 || from >= rows.length) return null;
     const nextIndex = Math.max(0, Math.min(insertionIndex, rows.length - 1));
     if (nextIndex === from) return null;
+    layoutWorkspace?.clear();
     const [row] = rows.splice(from, 1);
     rows.splice(nextIndex, 0, row);
     if (shouldSync) syncLayoutUiFromState();
@@ -5137,6 +5149,7 @@
 
   function deleteRow(rowIndex) {
     if (!confirm(`删除第 ${rowIndex + 1} 行？`)) return;
+    layoutWorkspace?.clear();
     getRows().splice(rowIndex, 1);
     syncLayoutUiFromState();
   }
@@ -5144,6 +5157,7 @@
   function deleteKey(rowIndex, keyIndex) {
     const rows = getRows();
     if (!rows[rowIndex] || keyIndex < 0 || keyIndex >= rows[rowIndex].length) return;
+    layoutWorkspace?.clear();
     rows[rowIndex].splice(keyIndex, 1);
     syncLayoutUiFromState();
   }
@@ -5631,6 +5645,7 @@
     const rows = getRows();
     if (!rows[fromRow] || !rows[toRow]) return null;
     if (fromIndex < 0 || fromIndex >= rows[fromRow].length) return null;
+    layoutWorkspace?.clear();
     const [key] = rows[fromRow].splice(fromIndex, 1);
     const adjusted = fromRow === toRow && toIndex > fromIndex ? toIndex - 1 : toIndex;
     const nextIndex = Math.max(0, Math.min(adjusted, rows[toRow].length));
@@ -5644,6 +5659,14 @@
   }
 
   function openLayoutKeyDialog(rowIndex, keyIndex, isNew) {
+    if (!isNew && layoutWorkspace && state.activeTab === "tab-layout") {
+      // Inline selection has no modal to receive the trailing touch click.
+      state.layoutKeyDialogTouchOpenUntil = 0;
+      state.layoutKeyDialogConsumeNextClick = false;
+      layoutWorkspace.select(rowIndex, keyIndex);
+      return;
+    }
+    if (layoutWorkspace && !layoutWorkspace.apply()) return;
     openKeyEditorDialog(rowIndex, keyIndex, isNew);
   }
 
@@ -8067,6 +8090,7 @@
       renderSelectors();
       renderLayoutEditor();
       renderLayoutPreview();
+      layoutWorkspace?.refresh();
       setStatus("layout-json-status", "JSON 合法，预览已更新", "ok");
     } catch (e) {
       setStatus("layout-json-status", `JSON 错误：${e.message}`, "err");
@@ -8205,6 +8229,7 @@
       syncLayoutJsonFromState();
       updateQrUi();
       updateThemeQrUi();
+      layoutWorkspace?.refresh();
     } catch (e) {
       setStatus("layout-json-status", `布局错误：${e.message}`, "err");
     }
@@ -8329,8 +8354,10 @@
         state.selectedBase = baseNames()[0] || "default";
         state.selectedSubmode = DEFAULT_SUBMODE;
         syncLayoutUiFromState();
+        setStatus("workspace-feedback", `已导入 ${file.name}`, "ok");
       } catch (err) {
         setStatus("layout-json-status", `导入失败：${err.message}`, "err");
+        setStatus("workspace-feedback", `导入失败：${err.message}`, "err");
       } finally {
         e.target.value = "";
       }
@@ -8386,13 +8413,7 @@
     }
     const jsonCard = el("layout-json-card");
     if (jsonCard) {
-      // 默认展开 layout-json-card
-      jsonCard.open = true;
-      if (!state.layoutJsonEditor) {
-        initLayoutJsonEditor().then(() => requestAnimationFrame(syncJsonEditorHeight));
-      } else {
-        requestAnimationFrame(syncJsonEditorHeight);
-      }
+      // The visual workspace is the default. Load the source editor on demand.
       jsonCard.addEventListener("toggle", () => {
         if (!jsonCard.open) {
           syncJsonEditorHeight();
@@ -12069,6 +12090,15 @@
     installThemeCropInteractions();
     initTabs();
     initLayoutTab();
+    if (window.createLayoutWorkspace) {
+      layoutWorkspace = window.createLayoutWorkspace({
+        el, state, getRows, keyTypeCapabilities, keyTypeLabel, editorKeyLabel,
+        normalizeRowHeightKey, normalizeDraftForSaveByAppRules,
+        sync: syncLayoutUiFromState, openAdvanced: openKeyEditorDialog,
+        hasSplitRows: () => !!getVariantRows(state.selectedBase, state.selectedSubmode)
+      });
+      renderLayoutPreview();
+    }
     initPreviewKeyEditing();
     initThemeTab();
     initPopupTab();
