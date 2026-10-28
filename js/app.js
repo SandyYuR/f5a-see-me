@@ -58,6 +58,9 @@
   const LIVE_PREVIEW_KEYBOARD_MAX_WIDTH = 576;
   const LIVE_PREVIEW_SPLIT_MAX_WIDTH = 1228;
   let layoutWorkspace = null;
+  let layoutJsonDraft = null;
+  let layoutJsonTextareaBound = false;
+  const LAYOUT_JSON_DRAFT_KEY = "f5a-workspace-layout-json-v2";
   const DEFAULT_SUBMODE = "default";
   const META_KEY = "__meta__";
   // 分体布局变体条目（app fx-rime-only 分支）：写在子布局 map 内的 "__variant__:split" 键，
@@ -2475,7 +2478,7 @@
   }
 
   function setActiveTab(targetId) {
-    if (layoutWorkspace && !layoutWorkspace.apply()) return;
+    if (layoutWorkspace && !layoutWorkspace.guard(() => setActiveTab(targetId))) return;
     const buttons = Array.from(document.querySelectorAll(".tabs .tab"));
     const previousTab = state.activeTab;
     state.activeTab = targetId;
@@ -4308,7 +4311,7 @@
       const total = weights.reduce((sum, weight) => sum + weight, 0);
       return `<div class="text-editor-key-row" style="height:${rowHeight}px">${row.map(({ key, rowIndex, keyIndex }, index) => {
         const colors = textEditorPreviewButtonColors(key, borderEnabled);
-        const attr = data.fallback ? ' aria-disabled="true"' : ` data-preview-row="${rowIndex}" data-preview-key="${keyIndex}"`;
+        const attr = data.fallback ? ' aria-disabled="true"' : ` data-preview-row="${rowIndex}" data-preview-key="${key.__workspaceIndex ?? keyIndex}"`;
         const face = textEditorPreviewKeyFaceHtml(key);
         const inset = borderEnabled ? 4 * scale : 0;
         return `<div class="text-editor-key-slot" style="width:${weights[index] / total * 100}%;padding:${inset}px"><div class="layout-key text-editor-key"${attr} role="button" tabindex="${data.fallback ? -1 : 0}" title="${escapeAttr(data.fallback ? "App 默认编辑按钮（仅预览）" : `${keyTypeLabel(key.type)}。点击编辑`)}" style="--preview-key-bg:${colors.backgroundCss};color:${colors.textCss};border-color:${colors.borderCss};border-width:${borderEnabled ? 0 : Math.max(1, scale / 2)}px;border-radius:${12 * scale}px;box-shadow:${borderEnabled ? `0 ${scale}px 0 ${colors.shadowCss}` : "none"};font-size:${14 * scale}px;opacity:${data.fallback && index === 2 ? 0.45 : 1}"><span class="text-editor-key-label">${face}</span></div></div>`;
@@ -4320,7 +4323,8 @@
   function renderTextEditorPreview(root) {
     const metrics = resolvePreviewMetrics(false);
     const width = resolvePreviewKeyboardWidth(root, metrics, false);
-    const rows = getRowsDockedRows(TEXT_EDITOR_LAYOUT_NAME, DEFAULT_SUBMODE);
+    const sourceRows = getRowsDockedRows(TEXT_EDITOR_LAYOUT_NAME, DEFAULT_SUBMODE);
+    const rows = layoutWorkspace?.previewRows(sourceRows) || sourceRows;
     const geometry = resolveTextEditorPreviewGeometry(width);
     const fallback = resolveTextEditorPreviewRows(rows).fallback;
     applyPreviewThemeSurface();
@@ -4374,8 +4378,7 @@
     const contentHeight = resolvePreviewContentHeight(getRows(), heightScale, renderWidth, metrics)
       ?? resolveFallbackContentHeight(renderWidth, false);
     applyPreviewThemeSurface();
-    /* 符号面板不是键盘：没有顶栏也没有底部安全区，把布局预览给的两段内边距归零，
-     * 面板才与键盘画布同宽（与 renderTextEditorPreview 同法）。 */
+    // The toolbar is rendered explicitly; do not reserve a second top-bar inset.
     root.style.setProperty("--preview-top-bar-height", "0px");
     root.style.setProperty("--preview-bottom-padding", "0px");
     /* 容器宽度交给 pinPreviewContainerWidth：全局 box-sizing: border-box，
@@ -4383,7 +4386,26 @@
     root.style.setProperty("--preview-keyboard-max-width", renderWidth + "px");
     /* unit = 键盘宽 / 10（与键盘预览同尺度）—— 面板格子与键盘按键的物理
      * 大小才可比，这也是「1dp ≈ unit/36」的由来。 */
-    const result = PV.render(root, {
+    const toolbar = state.previewKbToolbar !== false ? renderKeyboardToolbarPreviewHtml(metrics, renderWidth) : "";
+    const statusArea = toolbar && state.previewKbToolbarStatus ? renderKeyboardStatusAreaPreviewHtml(metrics, renderWidth) : "";
+    root.innerHTML = toolbar;
+    const symbolHost = document.createElement("div");
+    symbolHost.className = "symbol-preview-content";
+    if (statusArea) {
+      const stage = document.createElement("div");
+      stage.className = "kb-tb-status-stage";
+      const underlay = document.createElement("div");
+      underlay.className = "kb-tb-status-underlay";
+      underlay.setAttribute("aria-hidden", "true");
+      underlay.inert = true;
+      underlay.appendChild(symbolHost);
+      const overlay = document.createElement("div");
+      overlay.className = "kb-tb-status-overlay";
+      overlay.innerHTML = statusArea;
+      stage.append(underlay, overlay);
+      root.appendChild(stage);
+    } else root.appendChild(symbolHost);
+    const result = PV.render(symbolHost, {
       unit: renderWidth / 10,
       width: renderWidth,
       height: contentHeight,
@@ -4405,13 +4427,10 @@
         notesEl.appendChild(tip);
       } else {
         notesEl.hidden = false;
-        result.notes.forEach((line) => {
-          const note = document.createElement("div");
-          note.className = "sym-pv-note";
-          /* 含用户可控的分组名 —— 只能走 textContent。 */
-          note.textContent = line;
-          notesEl.appendChild(note);
-        });
+        const note = document.createElement("div");
+        note.className = "sym-pv-note";
+        note.textContent = `${result.groups.length} 个分组 · 每行 ${result.columns} 格。分组和符号可分别滚动；“最近使用”内容仅在输入法中显示。`;
+        notesEl.appendChild(note);
       }
     }
     requestAnimationFrame(pinPreviewContainerWidth);
@@ -4452,10 +4471,11 @@
     leaveSymbolPanelPreview();
     if (textEditor) { renderTextEditorPreview(root); return; }
     const previewSplit = !!state.previewSplit;
-    const rows = previewSplit && !state.editingSplit
+    let rows = previewSplit && !state.editingSplit
       ? (getVariantRows(state.selectedBase, state.selectedSubmode)
         || getRowsDockedRows(state.selectedBase, state.selectedSubmode))
       : getRows();
+    rows = layoutWorkspace?.previewRows(rows) || rows;
     const rowPercents = resolveRowHeightPercents(rows);
     const auxBarConfig = getAuxBarConfig();
     const auxBarKeys = getAuxBarKeys();
@@ -4537,7 +4557,7 @@
           if (key.swipeUp || key.swipeDown) badges += `<span class="key-badge key-badge-swipe" title="含上下划动"></span>`;
           else if (key.swipe) badges += `<span class="key-badge key-badge-swipe-legacy" title="含划动（旧单槽）"></span>`;
         }
-        const originalIndex = typeof sourceKey.__dupOf === "number" ? sourceKey.__dupOf : keyIndex;
+        const originalIndex = sourceKey.__workspaceIndex ?? (typeof sourceKey.__dupOf === "number" ? sourceKey.__dupOf : keyIndex);
         const previewEditTitle = `${keyTypeLabel(sourceKey.type)}${state.previewComposing ? "（合成中预览）" : ""}。点击按键可直接编辑`;
         // PlaceholderKey 始终只承担布局占位，不在预览中绘制成独立按键；
         // transparent 仅影响编辑器/导出语义，不能改变预览的空白占位外观。
@@ -4623,6 +4643,7 @@
     if (auxAttr !== null && auxAttr !== "") {
       const auxIndex = Number(auxAttr);
       if (!Number.isInteger(auxIndex) || auxIndex < 0 || auxIndex >= getAuxBarKeys().length) return false;
+      if (layoutWorkspace && !layoutWorkspace.guard(() => openPreviewKeyEditor(target))) return false;
       openKeyEditorDialog(-1, -1, false, auxIndex);
       return true;
     }
@@ -4633,14 +4654,16 @@
     const keyIndex = Number(keyAttr);
     // A separately configured split preview must edit the split source it displays.
     if (state.previewSplit && !state.editingSplit && getVariantRows(state.selectedBase, state.selectedSubmode)) {
-      if (layoutWorkspace && !layoutWorkspace.apply()) return false;
+      if (layoutWorkspace && !layoutWorkspace.guard(() => openPreviewKeyEditor(target))) return false;
+      layoutWorkspace?.suspend();
       state.editingSplit = true;
       syncLayoutUiFromState();
     }
     const rows = getRows();
     if (!Number.isInteger(rowIndex) || !Number.isInteger(keyIndex)) return false;
     if (!rows[rowIndex] || keyIndex < 0 || keyIndex >= rows[rowIndex].length) return false;
-    openLayoutKeyDialog(rowIndex, keyIndex, false);
+    if (layoutWorkspace) layoutWorkspace.select(rowIndex, keyIndex);
+    else openKeyEditorDialog(rowIndex, keyIndex, false);
     return true;
   }
 
@@ -5047,9 +5070,11 @@
         <span class="row-drag-handle" title="拖拽第 ${rowIndex + 1} 行排序">${rowIndex + 1}<span aria-hidden="true">⠿</span></span>
         <div class="chip-list key-list" data-row-index="${rowIndex}" title="按住空白处可上下拖拽调整行顺序"></div>
         <button class="row-add-key" title="新增按键">+</button>
+        <button class="row-copy" title="复制整行" ${state.selectedBase === TEXT_EDITOR_LAYOUT_NAME ? "disabled" : ""}>⧉</button>
         <button class="row-delete" title="删除行">🗑</button>
       `;
       block.querySelector(".row-add-key").addEventListener("click", () => openLayoutKeyDialog(rowIndex, -1, true));
+      block.querySelector(".row-copy").addEventListener("click", () => copyLayoutRow(rowIndex));
       block.querySelector(".row-delete").addEventListener("click", () => deleteRow(rowIndex));
       bindRowDrag(block);
 
@@ -5147,7 +5172,18 @@
     return nextIndex;
   }
 
+  function copyLayoutRow(rowIndex) {
+    if (state.selectedBase === TEXT_EDITOR_LAYOUT_NAME) return;
+    if (layoutWorkspace && !layoutWorkspace.guard(() => copyLayoutRow(rowIndex))) return;
+    const rows = getRows();
+    if (!rows[rowIndex]) return;
+    layoutWorkspace?.clear();
+    rows.splice(rowIndex + 1, 0, deepClone(rows[rowIndex]));
+    syncLayoutUiFromState();
+  }
+
   function deleteRow(rowIndex) {
+    if (layoutWorkspace && !layoutWorkspace.guard(() => deleteRow(rowIndex))) return;
     if (!confirm(`删除第 ${rowIndex + 1} 行？`)) return;
     layoutWorkspace?.clear();
     getRows().splice(rowIndex, 1);
@@ -5155,6 +5191,7 @@
   }
 
   function deleteKey(rowIndex, keyIndex) {
+    if (layoutWorkspace && !layoutWorkspace.guard(() => deleteKey(rowIndex, keyIndex))) return;
     const rows = getRows();
     if (!rows[rowIndex] || keyIndex < 0 || keyIndex >= rows[rowIndex].length) return;
     layoutWorkspace?.clear();
@@ -5659,14 +5696,8 @@
   }
 
   function openLayoutKeyDialog(rowIndex, keyIndex, isNew) {
-    if (!isNew && layoutWorkspace && state.activeTab === "tab-layout") {
-      // Inline selection has no modal to receive the trailing touch click.
-      state.layoutKeyDialogTouchOpenUntil = 0;
-      state.layoutKeyDialogConsumeNextClick = false;
-      layoutWorkspace.select(rowIndex, keyIndex);
-      return;
-    }
-    if (layoutWorkspace && !layoutWorkspace.apply()) return;
+    if (layoutWorkspace && !layoutWorkspace.guard(() => openLayoutKeyDialog(rowIndex, keyIndex, isNew))) return;
+    layoutWorkspace?.clear();
     openKeyEditorDialog(rowIndex, keyIndex, isNew);
   }
 
@@ -7755,6 +7786,10 @@
   }
 
   function syncLayoutJsonFromState() {
+    if (layoutJsonDraft !== null) {
+      setStatus("layout-json-status", "JSON 有未应用的修改；可视化操作只更新已应用布局。", "");
+      return;
+    }
     state.suppressLayoutJsonInput = true;
     setLayoutJsonText(`${prettyJson(state.layout)}\n`);
     state.suppressLayoutJsonInput = false;
@@ -8081,27 +8116,94 @@
     }
   }
 
+  function persistLayoutJsonDraft() {
+    try {
+      if (layoutJsonDraft === null) localStorage.removeItem(LAYOUT_JSON_DRAFT_KEY);
+      else localStorage.setItem(LAYOUT_JSON_DRAFT_KEY, layoutJsonDraft);
+    } catch (_) {
+      setStatus("layout-json-status", "JSON 草稿无法缓存，请保持页面打开并复制备份。", "err");
+    }
+  }
+
+  function restoreLayoutJsonDraft() {
+    try { layoutJsonDraft = localStorage.getItem(LAYOUT_JSON_DRAFT_KEY); } catch (_) {}
+    if (layoutJsonDraft === null) return;
+    state.suppressLayoutJsonInput = true;
+    setLayoutJsonText(layoutJsonDraft);
+    state.suppressLayoutJsonInput = false;
+    setStatus("layout-json-status", "已恢复未应用的 JSON 草稿。", "");
+  }
+
   function applyLayoutJsonEditorInput() {
     if (state.suppressLayoutJsonInput) return;
+    const text = getLayoutJsonText();
+    layoutJsonDraft = text === `${prettyJson(state.layout)}\n` ? null : text;
+    persistLayoutJsonDraft();
     scheduleJsonCheck("layout");
+    setStatus("layout-json-status", layoutJsonDraft === null ? "JSON 已同步" : "JSON 草稿未应用，点击“应用 JSON”更新布局。", "");
+  }
+
+  function commitLayoutJsonDraft() {
     try {
-      state.layout = normalizeLayoutObject(JSON.parse(getLayoutJsonText()));
-      ensureSelection();
-      renderSelectors();
-      renderLayoutEditor();
-      renderLayoutPreview();
-      layoutWorkspace?.refresh();
-      setStatus("layout-json-status", "JSON 合法，预览已更新", "ok");
+      const parsed = normalizeLayoutObject(JSON.parse(getLayoutJsonText()));
+      layoutWorkspace?.clear();
+      state.layout = parsed;
+      layoutJsonDraft = null;
+      persistLayoutJsonDraft();
+      syncLayoutUiFromState();
+      setStatus("layout-json-status", "JSON 已应用到布局", "ok");
+      return true;
     } catch (e) {
       setStatus("layout-json-status", `JSON 错误：${e.message}`, "err");
+      el("layout-json-card").open = true;
+      return false;
     }
+  }
+
+  function setupLayoutJsonDraftActions() {
+    el("layout-json-apply").addEventListener("click", commitLayoutJsonDraft);
+    el("layout-json-revert").addEventListener("click", () => {
+      layoutJsonDraft = null;
+      persistLayoutJsonDraft();
+      syncLayoutJsonFromState();
+    });
+    const dialog = el("workspace-json-dialog");
+    let next = null;
+    let bypass = false;
+    const returnToJson = () => {
+      dialog.close();
+      el("layout-json-card").open = true;
+      el("layout-json-card").scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    el("workspace-json-stay").addEventListener("click", returnToJson);
+    const proceed = () => {
+      dialog.close();
+      bypass = true;
+      try { next?.click(); } finally { bypass = false; }
+    };
+    el("workspace-json-current").addEventListener("click", proceed);
+    el("workspace-json-apply").addEventListener("click", () => {
+      if (commitLayoutJsonDraft()) proceed();
+      else returnToJson();
+    });
+    ["layout-download-json", "layout-share-current", "layout-ime-save"].forEach(id => {
+      el(id).addEventListener("click", event => {
+        if (bypass || layoutJsonDraft === null) return;
+        event.preventDefault(); event.stopImmediatePropagation();
+        next = el(id);
+        dialog.showModal();
+      }, true);
+    });
   }
 
   async function initLayoutJsonEditor() {
     if (state.layoutJsonEditor || state.layoutJsonEditorLoading) return;
     state.layoutJsonEditorLoading = true;
     const textarea = el("layout-json");
-    textarea.addEventListener("input", applyLayoutJsonEditorInput);
+    if (!layoutJsonTextareaBound) {
+      textarea.addEventListener("input", applyLayoutJsonEditorInput);
+      layoutJsonTextareaBound = true;
+    }
     try {
       const { EditorView, basicSetup, json, oneDark } = await loadCodeMirrorModules();
       const updateListener = EditorView.updateListener.of((update) => {
@@ -8413,7 +8515,8 @@
     }
     const jsonCard = el("layout-json-card");
     if (jsonCard) {
-      // The visual workspace is the default. Load the source editor on demand.
+      // Source is expanded by default, but remains optional when restored folded.
+      if (jsonCard.open) initLayoutJsonEditor();
       jsonCard.addEventListener("toggle", () => {
         if (!jsonCard.open) {
           syncJsonEditorHeight();
@@ -10126,9 +10229,21 @@
   // ── Icon Theme ──
   // ══════════════════════════════════════════════════════════════════
 
-  // Map of icon theme data URIs for file-ref previews fetched from IME
-  // key: "themeName:slot", value: data URI (blob or base64)
+  // Blob previews are scoped by theme, slot, file reference, and IME reload generation.
   const iconThemePreviewCache = new Map();
+  const iconThemePreviewRequests = new Map();
+  let iconThemePreviewGeneration = 0;
+  let iconPreviewFrame = null;
+  function scheduleIconPreviewRefresh() {
+    if (iconPreviewFrame !== null) return;
+    iconPreviewFrame = requestAnimationFrame(() => {
+      iconPreviewFrame = null;
+      renderLayoutPreview();
+    });
+  }
+  function iconPreviewCacheKey(themeName, slot, value) {
+    return JSON.stringify([themeName, slot, value.trim(), iconThemePreviewGeneration]);
+  }
   // Set of icon values that are local blob/data URIs (need upload on save)
   function isLocalIconRef(value) { return value && (value.startsWith("blob:") || value.startsWith("data:")); }
   function isFileIconRef(value) { return value && value.startsWith("file:"); }
@@ -10313,32 +10428,44 @@
     return `<svg viewBox="0 0 ${vw} ${vh}" width="20" height="20" xmlns="http://www.w3.org/2000/svg">${result.svg}</svg>`;
   }
 
-  async function fetchIconFilePreview(themeName, slot) {
+  async function fetchIconFilePreview(themeName, slot, value) {
     if (!IME_API_BASE) return null;
-    const cacheKey = `${themeName}:${slot}`;
+    const cacheKey = iconPreviewCacheKey(themeName, slot, value);
     const cached = iconThemePreviewCache.get(cacheKey);
     if (cached) return cached;
-    try {
-      const resp = await fetch(`${IME_API_BASE}/api/v1/icon-theme/preview?theme=${encodeURIComponent(themeName)}&slot=${encodeURIComponent(slot)}`);
-      if (!resp.ok) return null;
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      iconThemePreviewCache.set(cacheKey, url);
-      return url;
-    } catch (_) { return null; }
+    if (iconThemePreviewRequests.has(cacheKey)) return iconThemePreviewRequests.get(cacheKey);
+    const generation = iconThemePreviewGeneration;
+    const request = (async () => {
+      try {
+        const resp = await fetch(`${IME_API_BASE}/api/v1/icon-theme/preview?theme=${encodeURIComponent(themeName)}&slot=${encodeURIComponent(slot)}`);
+        if (!resp.ok) return null;
+        const blob = await resp.blob();
+        if (generation !== iconThemePreviewGeneration) return null;
+        const url = URL.createObjectURL(blob);
+        iconThemePreviewCache.set(cacheKey, url);
+        const current = currentIconThemeEntry();
+        // A late response for an old theme/slot must not overwrite the current preview.
+        if (current?.name === themeName && current.icons?.[slot]?.trim() === value.trim()) {
+          refreshSlotPreviewInDom(slot, url);
+          scheduleIconPreviewRefresh();
+        }
+        return url;
+      } catch (_) { return null; }
+      finally { iconThemePreviewRequests.delete(cacheKey); }
+    })();
+    iconThemePreviewRequests.set(cacheKey, request);
+    return request;
   }
 
   function resolveIconSlotDisplayUrl(themeName, slot, value) {
     if (!value) return null;
     if (isLocalIconRef(value)) return value;
     if (isFileIconRef(value)) {
-      const cacheKey = `${themeName}:${slot}`;
+      const cacheKey = iconPreviewCacheKey(themeName, slot, value);
       const cached = iconThemePreviewCache.get(cacheKey);
       if (cached) return cached;
       // trigger async fetch and return null; caller should handle async update
-      fetchIconFilePreview(themeName, slot).then((url) => {
-        if (url) refreshSlotPreviewInDom(slot, url);
-      });
+      fetchIconFilePreview(themeName, slot, value);
       return null;
     }
     if (isInlineSvgValue(value)) return "svg:" + value;
@@ -10361,16 +10488,14 @@
       return `<img src="${escapeAttr(value)}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;" data-slot-preview="${escapeAttr(slot)}">`;
     }
     if (isFileIconRef(value)) {
-      const cacheKey = `${themeName}:${slot}`;
+      const cacheKey = iconPreviewCacheKey(themeName, slot, value);
       const cached = iconThemePreviewCache.get(cacheKey);
       if (cached) {
         return `<img src="${escapeAttr(cached)}" alt="" style="max-width:100%;max-height:100%;object-fit:contain;">`;
       }
       // trigger async fetch
       if (IME_API_BASE) {
-        fetchIconFilePreview(themeName, slot).then((url) => {
-          if (url) refreshSlotPreviewInDom(slot, url);
-        });
+        fetchIconFilePreview(themeName, slot, value);
       }
       return `<span style="font-size:10px;color:var(--ok);" data-slot="${escapeAttr(slot)}" class="icon-file-placeholder">PNG</span>`;
     }
@@ -10585,6 +10710,7 @@
   }
 
   function renderIconThemeEditor() {
+    scheduleIconPreviewRefresh();
     const editable = isCurrentIconThemeEditable();
     setIconThemeJsonEditable(editable);
     renderIconThemeList();
@@ -10619,6 +10745,7 @@
   }
 
   function syncIconThemeJsonFromState() {
+    scheduleIconPreviewRefresh();
     scheduleHistoryCommit();
     const text = `${prettyJson(serializeCurrentIconTheme())}\n`;
     const textarea = el("icon-theme-json");
@@ -10792,7 +10919,9 @@
     if (!IME_API_BASE) return;
     const data = await imeApiRequest("/api/v1/icon-theme");
     if (data && Array.isArray(data.themes)) {
-      // Clear preview cache for previous themes
+      // Invalidate late responses as well as cached blobs when reloading from IME.
+      iconThemePreviewGeneration++;
+      iconThemePreviewCache.forEach(url => URL.revokeObjectURL(url));
       iconThemePreviewCache.clear();
       const themes = data.themes.map((raw) => ({
         id: raw.builtin ? "builtin-default" : `custom-${generateIconThemeUuid()}`,
@@ -10814,7 +10943,7 @@
         const theme = currentIconThemeEntry();
         if (theme && theme.icons) {
           for (const [slot, value] of Object.entries(theme.icons)) {
-            if (isFileIconRef(value)) fetchIconFilePreview(theme.name, slot);
+            if (isFileIconRef(value)) fetchIconFilePreview(theme.name, slot, value);
           }
         }
         setStatus("icon-theme-editor-status", `已从 IME 读取 ${themes.length} 个图标主题`, "ok");
@@ -10888,7 +11017,7 @@
         }
       } else if (isFileIconRef(value)) {
         // Try to fetch the file from IME and re-pack it
-        const blobUrl = await fetchIconFilePreview(theme.name, slot);
+        const blobUrl = await fetchIconFilePreview(theme.name, slot, value);
         if (blobUrl) {
           try {
             const resp = await fetch(blobUrl);
@@ -11640,7 +11769,7 @@
   }
 
   // 图标来源与图标主题面板一致：内联 SVG → svg；本地 blob/data → url；
-  // file: 走 fetchIconFilePreview 的缓存，未命中先请求再等下一次渲染；
+  // file: 走 fetchIconFilePreview 的缓存，请求完成后主动刷新当前主题预览；
   // 都没有则回落内置默认矢量（与 App 的 defaultIcon 对齐）。
   function toolbarPreviewIconFor(button) {
     if (!button) return null;
@@ -11658,9 +11787,9 @@
       if (isLocalIconRef(value)) return { kind: "url", value };
       if (isFileIconRef(value)) {
         const themeName = entry && entry.name ? entry.name : null;
-        const cached = themeName ? iconThemePreviewCache.get(`${themeName}:${slot}`) : null;
+        const cached = themeName ? iconThemePreviewCache.get(iconPreviewCacheKey(themeName, slot, value)) : null;
         if (cached) return { kind: "url", value: cached };
-        if (themeName) { try { fetchIconFilePreview(themeName, slot); } catch (_) {} }
+        if (themeName) { try { fetchIconFilePreview(themeName, slot, value); } catch (_) {} }
         return null;
       }
       return { kind: "text", value };
@@ -11702,7 +11831,8 @@
   }
 
   function syncPreviewToolbarUi() {
-    const textEditor = state.selectedBase === TEXT_EDITOR_LAYOUT_NAME;
+    const symbolPanel = state.activeTab === "tab-symbols";
+    const textEditor = state.selectedBase === TEXT_EDITOR_LAYOUT_NAME && state.activeTab !== "tab-symbols";
     ["pt-height", "pt-corner", "pt-gap-h", "pt-gap-v", "pt-gboard-style", "pt-hints"].forEach((id) => {
       const input = el(id);
       if (input) input.disabled = textEditor;
@@ -11734,11 +11864,11 @@
     const gboard = el("pt-gboard-style");
     if (gboard) gboard.checked = !!state.themeAppSync.gboardStyle;
     const previewSplit = el("pt-split");
-    if (previewSplit) { previewSplit.checked = !textEditor && !!state.previewSplit; previewSplit.disabled = textEditor; }
+    if (previewSplit) { previewSplit.checked = !textEditor && !!state.previewSplit; previewSplit.disabled = textEditor || symbolPanel; }
     const composing = el("pt-composing");
-    if (composing) { composing.checked = !textEditor && !!state.previewComposing; composing.disabled = textEditor; }
+    if (composing) { composing.checked = !textEditor && !!state.previewComposing; composing.disabled = textEditor || symbolPanel; }
     const splitGap = el("pt-split-gap");
-    const splitControlsEnabled = !textEditor && !!state.previewSplit;
+    const splitControlsEnabled = !textEditor && !symbolPanel && !!state.previewSplit;
     if (splitGap) {
       splitGap.value = Math.round(Number(state.themeAppSync.splitGapPercent) || 20);
       splitGap.disabled = !splitControlsEnabled;
@@ -11876,7 +12006,7 @@
   }
 
   function setJsonTextFor(prefix, text) {
-    if (prefix === "layout") { setLayoutJsonText(text); return; }
+    if (prefix === "layout") { setLayoutJsonText(text); applyLayoutJsonEditorInput(); return; }
     if (prefix === "theme") { setThemeJsonText(text); return; }
     if (prefix === "popup") { setPopupJsonText(text); return; }
     const ta = el("icon-theme-json");
@@ -11951,8 +12081,8 @@
       <div class="json-issue-line">
         <span class="json-issue-main">${errorMode ? "可尝试自动修复常见问题" : `共 ${report.total} 处可自动修复`}</span>
         <span class="json-issue-actions">
-          <button type="button" data-json-action="fix-apply">修复并应用</button>
-          <button type="button" data-json-action="fix-text">仅修复文本</button>
+          <button type="button" data-json-action="fix-apply">${prefix === "layout" ? "修复 JSON 草稿" : "修复并应用"}</button>
+          ${prefix === "layout" ? "" : '<button type="button" data-json-action="fix-text">仅修复文本</button>'}
         </span>
       </div>
     `;
@@ -11969,7 +12099,7 @@
         if (btn.dataset.jsonAction === "fix-apply") {
           setJsonTextFor(prefix, fresh.fixedText);
           applyJsonTextFor(prefix);
-          setStatus(`${prefix}-json-status`, "已自动修复并应用", "ok");
+          setStatus(`${prefix}-json-status`, prefix === "layout" ? "已修复 JSON 草稿（未应用）" : "已自动修复并应用", "ok");
           renderJsonIssues(prefix, F5aJsonLint.inspectJsonText(fresh.fixedText));
         } else {
           setJsonTextFor(prefix, fresh.fixedText);
@@ -12014,7 +12144,7 @@
           setJsonTextFor(prefix, pretty);
           applyJsonTextFor(prefix);
           renderJsonIssues(prefix, F5aJsonLint.inspectJsonText(pretty));
-          setStatus(`${prefix}-json-status`, "已格式化并应用", "ok");
+          setStatus(`${prefix}-json-status`, prefix === "layout" ? "JSON 草稿已格式化（未应用）" : "已格式化并应用", "ok");
         } catch (e) {
           setStatus(`${prefix}-json-status`, `格式化失败：${e.message}`, "err");
         }
@@ -12094,11 +12224,12 @@
       layoutWorkspace = window.createLayoutWorkspace({
         el, state, getRows, keyTypeCapabilities, keyTypeLabel, editorKeyLabel,
         normalizeRowHeightKey, normalizeDraftForSaveByAppRules,
-        sync: syncLayoutUiFromState, openAdvanced: openKeyEditorDialog,
+        sync: syncLayoutUiFromState, openAdvanced: openKeyEditorDialog, renderPreview: renderLayoutPreview,
         hasSplitRows: () => !!getVariantRows(state.selectedBase, state.selectedSubmode)
       });
       renderLayoutPreview();
     }
+    setupLayoutJsonDraftActions();
     initPreviewKeyEditing();
     initThemeTab();
     initPopupTab();
@@ -12111,6 +12242,8 @@
     setupImeBridgeActions();
     setupUiConvenienceFeatures();
     await restoreDraftFromStorage();
+    restoreLayoutJsonDraft();
+    layoutWorkspace?.restore();
     beginHistoryTracking();
     await autoLoadImeDataOnStartup();
     const previewPanel = document.querySelector(".keyboard-preview-panel");

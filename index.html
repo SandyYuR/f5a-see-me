@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>fcitx5-android see me - Fcitx5 Android 可视化编辑器</title>
   <link rel="stylesheet" href="./style.css?v=20261023000000">
-  <link rel="stylesheet" href="./workspace.css?v=2026102501">
+  <link rel="stylesheet" href="./workspace.css?v=2026102801">
 </head>
 <body>
   <header class="topbar">
     <div class="topbar-main">
       <div class="topbar-title">
-        <h1><span class="brand-mark" aria-hidden="true">F5</span> see me <span class="brand-caption">键盘工作室</span></h1>
+        <h1>fcitx5-android see me</h1>
         <h2>适用于 <a href="https://github.com/SandyYuR/fcitx5-android" target="_blank" rel="noopener noreferrer">SandyYuR/fcitx5-android</a>的可视化编辑器</h2>
       </div>
       <div class="topbar-actions">
@@ -24,26 +24,28 @@
         <button type="button" id="top-undo" class="mini-button" title="撤销 (Ctrl+Z)" disabled>↶ 撤销</button>
         <button type="button" id="top-redo" class="mini-button" title="重做 (Ctrl+Y)" disabled>↷ 重做</button>
       </div>
+      <div id="draft-save-status" class="status draft-save-status" role="status"></div>
     </div>
   </header>
 
   <main>
-    <div class="tabs" role="tablist" aria-label="编辑器功能" data-tab-nav>
-      <button type="button" class="tab active" role="tab" id="tabbtn-layout" data-tab-target="tab-layout" aria-controls="tab-layout" aria-selected="true" tabindex="0">布局编辑</button>
-      <button type="button" class="tab" role="tab" id="tabbtn-theme" data-tab-target="tab-theme" aria-controls="tab-theme" aria-selected="false" tabindex="-1">主题编辑</button>
-      <button type="button" class="tab" role="tab" id="tabbtn-popup" data-tab-target="tab-popup" aria-controls="tab-popup" aria-selected="false" tabindex="-1">弹出字符</button>
-      <button type="button" class="tab" role="tab" id="tabbtn-icon-theme" data-tab-target="tab-icon-theme" aria-controls="tab-icon-theme" aria-selected="false" tabindex="-1">图标主题</button>
-      <button type="button" class="tab" role="tab" id="tabbtn-symbols" data-tab-target="tab-symbols" aria-controls="tab-symbols" aria-selected="false" tabindex="-1">符号面板</button>
-    </div>
-
-    <div id="draft-save-status" class="status draft-save-status" role="status"></div>
-
+    <div id="editing-workspace" class="editing-workspace has-inspector">
     <div id="shared-preview-host">
     <details class="keyboard-preview-panel" open>
       <summary>布局预览</summary>
-      <p class="canvas-help">点击按键编辑属性 · 在下方排列区拖动调整顺序</p>
-      <details class="preview-settings">
-        <summary>预览设置</summary>
+      <div id="preview-layout-tabs" class="preview-layout-tabs" role="group" aria-label="预览布局"></div>
+      <p class="canvas-help">点预览按键进入属性窗；点下方排列区按键打开完整编辑。</p>
+      <details class="preview-settings" id="preview-simulation">
+        <summary>状态模拟 <span>仅预览</span></summary>
+        <div class="preview-toolbar">
+        <label title="预览输入合成时的按键，取消勾选恢复普通状态；不修改布局"><input type="checkbox" id="pt-composing"> 合成中</label>
+        <label><input type="checkbox" id="pt-split"> 分体键盘</label>
+        <label title="预览 App 键盘上方的工具栏（左侧工具栏开关 + 中间按钮组 + 右侧收起键盘）；不修改布局"><input type="checkbox" id="pt-kb-toolbar"> 键盘工具栏</label>
+        <label id="pt-kb-toolbar-status-cell" title="预览点工具栏开关后升起的状态区（在 App 内整块替换键盘）"><input type="checkbox" id="pt-kb-toolbar-status"> 状态区</label>
+        </div>
+      </details>
+      <details class="preview-settings" id="preview-appearance">
+        <summary>预览外观 <span>尺寸与显示</span></summary>
       <div class="preview-toolbar" id="preview-toolbar">
         <span class="pt-cell"><label for="pt-height">高度%</label><input id="pt-height" class="num-input" type="number" min="10" max="90" step="1" placeholder="默认"></span>
         <span class="pt-cell"><label for="pt-corner">圆角</label><input id="pt-corner" class="num-input" type="number" min="0" max="32" step="1"><span class="pt-unit">dp</span></span>
@@ -53,24 +55,13 @@
         <label><input type="checkbox" id="pt-border"> 按键边框</label>
         <label><input type="checkbox" id="pt-stroke"> 边框描边</label>
         <label><input type="checkbox" id="pt-hints"> 显示提示</label>
-        <label title="预览输入合成时的按键，取消勾选恢复普通状态；不修改布局"><input type="checkbox" id="pt-composing"> 合成中</label>
-        <label><input type="checkbox" id="pt-split"> 分体键盘</label>
         <label><input type="checkbox" id="pt-gboard-style"> Gboard 风格按钮</label>
         <span class="preview-toolbar-sep" aria-hidden="true"></span>
-        <label title="预览 App 键盘上方的工具栏（左侧工具栏开关 + 中间按钮组 + 右侧收起键盘）；不修改布局"><input type="checkbox" id="pt-kb-toolbar"> 键盘工具栏</label>
-        <label id="pt-kb-toolbar-status-cell" title="预览点工具栏开关后升起的状态区（在 App 内整块替换键盘）"><input type="checkbox" id="pt-kb-toolbar-status"> 状态区</label>
         <span class="preview-toolbar-sep" aria-hidden="true"></span>
         <label id="pt-split-gap-cell" title="预览分体键盘时的中缝宽度（app：split_keyboard_gap_percent）"><input type="checkbox" id="pt-align-halves" checked> 中缝对齐</label>
         <span class="pt-cell"><label for="pt-split-gap">中缝</label><input id="pt-split-gap" class="num-input" type="number" min="5" max="60" step="1"><span class="pt-unit">%</span></span>
       </div>
       </details>
-      <div id="preview-hint-legend" class="preview-hint-legend" aria-label="按键提示图例">
-        <span><i class="legend-dot key-badge-lp" aria-hidden="true"></i>长按动作</span>
-        <span><i class="legend-dot key-badge-macro" aria-hidden="true"></i>点击宏</span>
-        <span><i class="legend-dot key-badge-swipe" aria-hidden="true"></i>上下划动</span>
-        <span><i class="legend-dot key-badge-swipe-legacy" aria-hidden="true"></i>旧版划动</span>
-        <span>仅用于编辑提示</span>
-      </div>
       <div class="preview-shell">
         <div id="theme-preview-extra-left" class="theme-preview-extra-side"></div>
         <div class="preview-center">
@@ -80,6 +71,15 @@
         </div>
         <div id="theme-preview-extra-right" class="theme-preview-extra-side"></div>
       </div>
+      <details class="preview-legend-details"><summary>按键提示图例</summary>
+      <div id="preview-hint-legend" class="preview-hint-legend" aria-label="按键提示图例">
+        <span><i class="legend-dot key-badge-lp" aria-hidden="true"></i>长按动作</span>
+        <span><i class="legend-dot key-badge-macro" aria-hidden="true"></i>点击宏</span>
+        <span><i class="legend-dot key-badge-swipe" aria-hidden="true"></i>上下划动</span>
+        <span><i class="legend-dot key-badge-swipe-legacy" aria-hidden="true"></i>旧版划动</span>
+        <span>仅用于编辑提示</span>
+      </div>
+      </details>
       <details class="theme-preview-mobile-card" id="theme-preview-mobile-card">
         <summary>主题预览色块</summary>
         <div id="theme-preview-extra-mobile" class="theme-preview-extra-mobile"></div>
@@ -88,11 +88,49 @@
 
     </div>
 
-    <section class="panel active" id="tab-layout" role="tabpanel" aria-labelledby="tabbtn-layout" tabindex="0">
-      <div class="workspace-heading">
-        <div><h2>布局工作台</h2><p class="workspace-subtitle">选中按键，即刻调整你的键盘。</p></div>
-        <span id="workspace-layout-count" class="workspace-count"></span>
+    <aside class="key-inspector is-empty" id="key-inspector" aria-label="按键属性">
+      <div class="inspector-heading"><h3>按键属性</h3><button type="button" id="inspector-close" class="mini-button" aria-label="关闭属性窗">×</button></div>
+      <div id="inspector-empty" class="inspector-empty">
+        <p>点击预览中的按键开始编辑。</p>
+        <div class="inspector-empty-section">▸ 基本属性</div>
+        <div class="inspector-empty-section">▸ 显示与尺寸</div>
+        <div class="inspector-empty-section">▸ 更多属性</div>
+        <div class="inspector-empty-section">▸ 调整位置</div>
       </div>
+      <form id="inspector-form" hidden>
+        <div class="inspector-context"><strong id="inspector-key-name"></strong><span id="inspector-key-position"></span><div class="inspector-navigation"><button type="button" id="inspector-prev" class="mini-button">← 上一键</button><button type="button" id="inspector-next" class="mini-button">下一键 →</button></div></div>
+        <div class="inspector-sample"><div id="inspector-key-face" class="inspector-key-face"></div><span>当前按键 · 草稿预览</span></div>
+        <div id="inspector-status" class="status inspector-draft-status" role="status" aria-live="polite"></div>
+        <div class="inspector-body">
+          <details class="card" open id="inspector-basic"><summary>基本属性</summary><p id="inspector-type" class="inspector-type"></p><div class="inspector-fields">
+            <label>主字符<input id="inspector-main" type="text" autocomplete="off"></label>
+            <label>副字符<input id="inspector-alt" type="text" autocomplete="off"></label>
+            <label>标签<input id="inspector-label" type="text" autocomplete="off"></label>
+          </div></details>
+          <details class="card" open id="inspector-size"><summary>显示与尺寸</summary><div class="inspector-fields">
+            <label>显示文本<input id="inspector-display" type="text" autocomplete="off" placeholder="跟随主字符"></label>
+            <label>宽度权重<input id="inspector-weight" type="number" min="0" max="1" step="any" placeholder="自动"></label>
+            <label>行高 %<input id="inspector-row-height" type="number" min="1" max="100" step="any" placeholder="自动"></label>
+          </div><p class="inspector-note">留空使用默认值。修改先显示在预览中，点击应用后写入布局。</p></details>
+          <details class="card" id="inspector-more" open><summary>更多属性</summary><p class="inspector-note">按键类型、划动事件、宏、颜色与合成态</p><button type="button" id="inspector-advanced">打开完整编辑…</button></details>
+          <details class="card" id="inspector-position"><summary>调整位置</summary><div class="inspector-move"><button type="button" id="inspector-left">← 左移</button><button type="button" id="inspector-right">右移 →</button></div><p class="inspector-note">移动随应用一起保存，也可取消。</p><div class="inspector-key-actions"><button type="button" id="inspector-duplicate">复制按键</button><button type="button" id="inspector-delete" class="danger">删除按键</button></div></details>
+        </div>
+        <div class="inspector-actions"><button type="button" id="inspector-revert">取消</button><button type="submit" id="inspector-apply" class="primary">应用</button></div>
+      </form>
+    </aside>
+    </div>
+
+    <div class="tabs" role="tablist" aria-label="编辑器功能" data-tab-nav>
+      <button type="button" class="tab active" role="tab" id="tabbtn-layout" data-tab-target="tab-layout" aria-controls="tab-layout" aria-selected="true" tabindex="0">布局编辑</button>
+      <button type="button" class="tab" role="tab" id="tabbtn-theme" data-tab-target="tab-theme" aria-controls="tab-theme" aria-selected="false" tabindex="-1">主题编辑</button>
+      <button type="button" class="tab" role="tab" id="tabbtn-popup" data-tab-target="tab-popup" aria-controls="tab-popup" aria-selected="false" tabindex="-1">弹出字符</button>
+      <button type="button" class="tab" role="tab" id="tabbtn-icon-theme" data-tab-target="tab-icon-theme" aria-controls="tab-icon-theme" aria-selected="false" tabindex="-1">图标主题</button>
+      <button type="button" class="tab" role="tab" id="tabbtn-symbols" data-tab-target="tab-symbols" aria-controls="tab-symbols" aria-selected="false" tabindex="-1">符号面板</button>
+    </div>
+
+    <section class="panel active" id="tab-layout" role="tabpanel" aria-labelledby="tabbtn-layout" tabindex="0">
+      <details class="card workspace-file-card" id="layout-file-card" open>
+        <summary>布局与文件操作 <span id="workspace-layout-count" class="summary-hint"></span></summary>
       <div class="workspace-commandbar">
         <div class="workspace-selectors">
           <div class="spinner-strip">
@@ -108,22 +146,22 @@
         <div class="workspace-file-actions">
           <button id="layout-download-json" class="primary">导出 JSON</button>
           <label class="file-button">导入 JSON<input id="layout-import-file" type="file" accept="application/json,.json"></label>
-          <button type="button" id="workspace-json-toggle" aria-controls="layout-json-card" aria-expanded="false">{ } 源码</button>
+          <button type="button" id="workspace-json-toggle" aria-controls="layout-json-card" aria-expanded="true">{ } JSON</button>
         </div>
       </div>
       <div id="workspace-feedback" class="status workspace-feedback" role="status" aria-live="polite"></div>
+      </details>
       <div class="layout-workbench layout-studio">
         <div class="card layout-main-column-card" id="layout-main-column-card">
           <div class="layout-main-column">
-            <div id="layout-canvas-host"></div>
-            <details class="card" open>
+            <details class="card" id="layout-arrangement-card" open>
               <summary>按键排列 <span class="summary-hint">拖动按键或行柄排序</span></summary>
               <div class="editor-surface">
                 <div id="layout-rows" class="layout-rows"></div>
               </div>
             </details>
 
-            <details class="card">
+            <details class="card" id="layout-settings-card" open>
               <summary>布局设置与管理</summary>
               <div class="toolbar details-toolbar">
                 <button id="layout-rename-layout">重命名布局</button>
@@ -147,7 +185,7 @@
               </div>
             </details>
 
-            <details class="card">
+            <details class="card" id="layout-connection-card" open>
               <summary>连接输入法与二维码分享</summary>
               <div>
                 <div class="form-row form-inline">
@@ -172,40 +210,13 @@
           </div>
         </div>
 
-        <aside class="key-inspector" id="key-inspector" aria-label="按键属性">
-          <div class="inspector-heading"><h3>按键属性</h3><span class="inspector-badge">快捷编辑</span></div>
-          <div id="inspector-empty" class="inspector-empty">
-            <div class="empty-key" aria-hidden="true">A<span>＋</span></div>
-            <h4>从一个按键开始</h4>
-            <p>点击预览或排列区的按键，<br>在这里调整文字和尺寸。</p>
-            <div class="inspector-guide"><span>01</span> 选择布局与子模式<br><span>02</span> 点选按键，修改属性<br><span>03</span> 导出 JSON，在手机验证</div>
-          </div>
-          <form id="inspector-form" hidden>
-            <div class="inspector-key-heading"><div id="inspector-key-face" class="inspector-key-face"></div><div><h4 id="inspector-key-name"></h4><p id="inspector-key-position"></p></div></div>
-            <div class="inspector-navigation"><button type="button" id="inspector-prev" title="选择上一个按键">← 上一键</button><button type="button" id="inspector-next" title="选择下一个按键">下一键 →</button></div>
-            <p id="inspector-type" class="inspector-type"></p>
-            <div class="inspector-fields">
-              <label data-inspector-field="main">主字符<input id="inspector-main" type="text" autocomplete="off"></label>
-              <label data-inspector-field="alt">副字符<input id="inspector-alt" type="text" autocomplete="off"></label>
-              <label data-inspector-field="label">标签<input id="inspector-label" type="text" autocomplete="off"></label>
-              <label>宽度权重<input id="inspector-weight" type="number" min="0" max="1" step="any" placeholder="自动"></label>
-              <label>行高 %<input id="inspector-row-height" type="number" min="1" max="100" step="any" placeholder="自动"></label>
-            </div>
-            <p class="inspector-note">留空使用默认尺寸。修改后离开输入框即应用，支持撤销。</p>
-            <div id="inspector-status" class="status" role="status" aria-live="polite"></div>
-            <div class="inspector-save-actions"><button type="submit" class="primary">应用修改</button><button type="button" id="inspector-revert">还原输入</button></div>
-            <div class="inspector-section"><h4>更多属性</h4><p>按键类型、显示文本、划动事件、颜色与合成态</p><button type="button" id="inspector-advanced">完整编辑… <span aria-hidden="true">↗</span></button></div>
-            <div class="inspector-section"><h4>调整位置</h4><div class="inspector-move"><button type="button" id="inspector-left">← 左移</button><button type="button" id="inspector-right">右移 →</button></div><div class="inspector-key-actions"><button type="button" id="inspector-duplicate">复制按键</button><button type="button" id="inspector-delete" class="danger">删除</button></div></div>
-          </form>
-          <button type="button" id="inspector-back-to-canvas">↑ 返回键盘预览</button>
-          <p class="inspector-footer">浏览器草稿自动保存 · Ctrl / ⌘ Z 撤销</p>
-        </aside>
-
-        <details class="card json-card" id="layout-json-card">
-          <summary>布局 JSON <span class="summary-hint">高级编辑 · 与可视化布局双向同步</span></summary>
+        <details class="card json-card" id="layout-json-card" open>
+          <summary>布局 JSON <span class="summary-hint">高级编辑 · 应用后写入布局</span></summary>
           <div class="json-card-body">
             <div id="layout-json-issues" class="json-issues"></div>
             <div class="toolbar">
+              <button id="layout-json-apply" type="button" class="primary">应用 JSON</button>
+              <button id="layout-json-revert" type="button">还原 JSON</button>
               <button id="layout-json-check" type="button">检查语法</button>
               <button id="layout-json-fix" type="button">一键修复</button>
               <button id="layout-json-format" type="button">格式化</button>
@@ -485,6 +496,26 @@
       </div>
     </section>
   </main>
+
+  <dialog id="workspace-leave-dialog" class="editor-dialog" aria-labelledby="workspace-leave-title">
+    <h3 id="workspace-leave-title">处理未应用的修改</h3>
+    <p id="workspace-leave-message">当前按键有未应用的修改，继续前请选择如何处理。</p>
+    <div class="dialog-toolbar">
+      <button type="button" id="workspace-leave-stay">继续编辑</button>
+      <button type="button" id="workspace-leave-discard">放弃并继续</button>
+      <button type="button" id="workspace-leave-apply" class="primary">应用并继续</button>
+    </div>
+  </dialog>
+  <dialog id="workspace-json-dialog" class="editor-dialog" aria-labelledby="workspace-json-title">
+    <h3 id="workspace-json-title">布局 JSON 尚未应用</h3>
+    <p>请选择要导出或保存的内容。未应用的 JSON 会继续保留在编辑器中。</p>
+    <div class="dialog-toolbar">
+      <button type="button" id="workspace-json-stay">返回 JSON</button>
+      <button type="button" id="workspace-json-current">使用已应用内容</button>
+      <button type="button" id="workspace-json-apply" class="primary">应用 JSON 并继续</button>
+    </div>
+  </dialog>
+
 
   <footer class="footnote">
     <p><center>All rights reserved © <a href="https://github.com/fxliang/f5a-see-me" target="_blank" rel="noopener noreferrer">fxliang/f5a-see-me</a></center></p>
@@ -943,7 +974,7 @@
   <script src="./js/symbol-preview.js?v=20261015050000"></script>
   <script src="./js/random-theme.js?v=20261015050000"></script>
   <script src="./js/toolbar-preview.js?v=20261023000000"></script>
-  <script src="./js/layout-workspace.js?v=2026102501"></script>
-  <script src="./js/app.js?v=2026102501"></script>
+  <script src="./js/layout-workspace.js?v=2026102801"></script>
+  <script src="./js/app.js?v=2026102801"></script>
 </body>
 </html>

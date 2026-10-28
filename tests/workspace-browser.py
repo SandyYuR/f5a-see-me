@@ -1,11 +1,12 @@
-"""Real-browser coverage for the layout workspace.
+"""Browser regression coverage for workspace transactions and toolbar previews.
 Run: python tests/workspace-browser.py
-Requires Playwright for Python and Chromium (CHROMIUM_PATH overrides its path).
-Screenshots are written to F5A_SHOTS when set; no external services are required.
+Requires Python Playwright and Chromium (override CHROMIUM_PATH if needed).
+Set F5A_SHOTS to save the reviewed desktop, mobile, and symbols screenshots.
 """
 import functools
 import json
 import os
+import re
 from pathlib import Path
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -28,7 +29,7 @@ shots = os.environ.get('F5A_SHOTS')
 def snapshot(page, name):
     if shots:
         Path(shots).mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(Path(shots) / f'{name}.png'), full_page=True)
+        page.screenshot(path=str(Path(shots) / f'{name}.png'), full_page='mobile' not in name)
 
 
 def layout(page):
@@ -39,180 +40,283 @@ def key(page, row=0, index=0):
     return page.locator(f'#layout-preview [data-preview-row="{row}"][data-preview-key="{index}"]').first
 
 
-def upload(page, data):
-    page.locator('#layout-import-file').set_input_files({
-        'name': 'layout.json', 'mimeType': 'application/json',
-        'buffer': json.dumps(data).encode(),
+def upload(page, data, target='layout-import-file'):
+    page.locator(f'#{target}').set_input_files({
+        'name': 'fixture.json', 'mimeType': 'application/json', 'buffer': json.dumps(data).encode(),
     })
+
+
+def alpha(main):
+    return {'type': 'AlphabetKey', 'main': main, 'alt': '1'}
+
+
+def offline(route):
+    if '/api/v1/' in route.request.url:
+        route.fulfill(status=404, content_type='application/json', body='{"message":"offline"}')
+    elif route.request.url.startswith(url):
+        route.continue_()
+    else:
+        route.abort()
 
 
 try:
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH', '/usr/bin/chromium'), args=['--no-sandbox'])
         context = browser.new_context(viewport={'width': 1440, 'height': 1000}, color_scheme='light')
-        # Exercise the static/offline editor, including its textarea fallback.
-        context.route('**/*', lambda route: route.continue_() if route.request.url.startswith(url) else route.abort())
+        context.route('**/*', offline)
         page = context.new_page()
         errors = []
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.goto(url, wait_until='domcontentloaded')
         expect(page.locator('body')).to_have_class('layout-workspace-active')
-        expect(page.locator('#layout-json-card')).not_to_be_visible()
-        expect(page.locator('#layout-download-json')).to_be_visible()
-        page.locator('#layout-import-file').set_input_files({
-            'name': 'broken.json', 'mimeType': 'application/json', 'buffer': b'{broken',
-        })
-        expect(page.locator('#workspace-feedback')).to_be_visible()
-        expect(page.locator('#workspace-feedback')).to_contain_text('导入失败')
-        assert len(layout(page)['default'][0]) == 10
-        snapshot(page, 'workspace-light-empty')
+        assert page.evaluate('''() => {
+            const ids = Array.from(document.querySelectorAll('[id]'), e => e.id);
+            return ids.length === new Set(ids).size;
+        }'''), 'duplicate DOM IDs'
+        expect(page.locator('#layout-json-card')).to_be_visible()
+        expect(page.locator('#layout-json')).not_to_be_empty()
+        # Preview and inspector share the workspace across tabs; tabs follow it on desktop.
+        assert page.locator('#editing-workspace').bounding_box()['y'] < page.locator('.tabs').bounding_box()['y']
+        assert page.locator('.keyboard-preview-panel').evaluate('(p) => p.parentElement.id') == 'shared-preview-host'
         key(page).click()
         expect(page.locator('#inspector-main')).to_have_value('Q')
-        assert not page.locator('#layout-key-dialog').evaluate('(d) => d.open')
-        # Changing a field then clicking the next key must work on the first click.
         page.locator('#inspector-main').fill('Ω')
+        page.locator('#inspector-weight').click()
+        expect(key(page)).to_contain_text('Ω')
+        assert layout(page)['default'][0][0]['main'] == 'Q', 'blur must not commit a draft'
         key(page, 0, 1).click()
+        expect(page.locator('#workspace-leave-dialog')).to_be_visible()
+        page.locator('#workspace-leave-stay').click()
+        expect(page.locator('#inspector-main')).to_have_value('Ω')
+        key(page, 0, 1).click()
+        page.locator('#workspace-leave-apply').click()
         expect(page.locator('#inspector-main')).to_have_value('W')
         assert layout(page)['default'][0][0]['main'] == 'Ω'
         page.locator('#inspector-main').fill('AB')
-        page.locator('#inspector-next').click()
+        page.locator('#inspector-apply').click()
         expect(page.locator('#inspector-status')).to_contain_text('单个字符')
         assert layout(page)['default'][0][1]['main'] == 'W'
-        expect(page.locator('#inspector-key-position')).to_contain_text('第 2 键')
-        downloads = []
-        page.on('download', lambda item: downloads.append(item))
-        page.locator('#layout-download-json').click()
-        page.wait_for_timeout(100)
-        assert not downloads, 'invalid pending input must block export'
         page.locator('#inspector-revert').click()
-        expect(page.locator('#inspector-main')).to_have_value('W')
         page.locator('#inspector-weight').fill('0.15')
-        page.locator('#inspector-weight').press('Tab')
-        assert layout(page)['default'][0][1]['weight'] == 0.15
-        page.locator('#inspector-weight').fill('')
-        page.locator('#inspector-weight').press('Tab')
-        assert 'weight' not in layout(page)['default'][0][1]
-        page.locator('#inspector-duplicate').click()
-        assert len(layout(page)['default'][0]) == 11
+        page.locator('#inspector-position > summary').click()
         page.locator('#inspector-right').click()
-        assert layout(page)['default'][0][3]['main'] == 'W'
-        page.locator('#inspector-delete').click()
-        assert len(layout(page)['default'][0]) == 10
+        assert layout(page)['default'][0][1]['main'] == 'W'
+        expect(page.locator('#inspector-key-position')).to_contain_text('第 3 键')
+        page.locator('#inspector-revert').click()
+        expect(page.locator('#inspector-key-position')).to_contain_text('第 2 键')
+        page.locator('#inspector-main').fill('Ж')
+        page.locator('#inspector-right').click()
+        page.locator('#inspector-apply').click()
+        assert layout(page)['default'][0][2]['main'] == 'Ж'
         page.locator('#top-undo').click()
-        assert len(layout(page)['default'][0]) == 11
+        assert layout(page)['default'][0][1]['main'] == 'W', 'one undo restores movement and fields together'
         page.locator('#top-redo').click()
-        assert len(layout(page)['default'][0]) == 10
-        key(page).click()
-        page.locator('#inspector-advanced').click()
-        page.locator('#layout-key-alt').fill('9')
-        page.locator('#layout-key-save').click()
-        expect(page.locator('#inspector-alt')).to_have_value('9')
-        assert layout(page)['default'][0][0]['alt'] == '9'
-        # Full editor is still cancellable without touching the saved layout.
-        page.locator('#inspector-advanced').click()
+        assert layout(page)['default'][0][2]['main'] == 'Ж'
+        # Row chips retain the complete modal editor; cancel keeps committed data.
+        page.locator('#layout-rows .layout-chip').first.click()
+        expect(page.locator('#layout-key-dialog')).to_be_visible()
         page.locator('#layout-key-main').fill('X')
         page.locator('#layout-key-cancel').click()
         assert layout(page)['default'][0][0]['main'] == 'Ω'
-        snapshot(page, 'workspace-light')
-        page.locator('[data-site-theme="dark"]').click()
-        snapshot(page, 'workspace-dark')
-        page.locator('[data-site-theme="light"]').click()
-        for tab in ['theme', 'popup', 'icon-theme', 'symbols', 'layout']:
-            page.locator(f'#tabbtn-{tab}').click()
-            expect(page.locator(f'#tab-{tab}')).to_be_visible()
-            host = 'layout-canvas-host' if tab == 'layout' else 'shared-preview-host'
-            assert page.locator('.keyboard-preview-panel').evaluate('(p) => p.parentElement.id') == host
-        page.locator('#workspace-json-toggle').click()
-        expect(page.locator('#layout-json-card')).to_be_visible()
+        # Refresh preserves an unfinished key independently from the layout document.
+        key(page).click()
+        page.locator('#inspector-main').fill('Д')
+        page.reload(wait_until='domcontentloaded')
+        expect(page.locator('#inspector-main')).to_have_value('Д')
+        assert layout(page)['default'][0][0]['main'] == 'Ω'
+        page.locator('#tabbtn-theme').click()
+        page.locator('#workspace-leave-discard').click()
+        expect(page.locator('#tab-theme')).to_be_visible()
+        page.locator('#tabbtn-layout').click()
+        key(page).click()
+        expect(page.locator('#inspector-main')).to_have_value('Ω')
+        # JSON is an explicit draft, survives malformed input/refresh, and guards export.
         source = layout(page)
         source['default'][0][0]['main'] = 'K'
         page.locator('#layout-json').fill(json.dumps(source))
-        expect(page.locator('#inspector-main')).to_have_value('K')
-        page.locator('#layout-json').fill('{broken')
+        expect(key(page)).to_contain_text('Ω')
+        page.locator('#layout-download-json').click()
+        expect(page.locator('#workspace-json-dialog')).to_be_visible()
+        with page.expect_download() as download:
+            page.locator('#workspace-json-current').click()
+        assert json.loads(Path(download.value.path()).read_text())['default'][0][0]['main'] == 'Ω'
+        page.locator('#layout-json-format').click()
+        expect(key(page)).to_contain_text('Ω')
+        expect(page.locator('#layout-json-status')).to_contain_text('未应用')
+        page.locator('#layout-json-apply').click()
+        expect(key(page)).to_contain_text('K')
+        page.locator('#layout-json').fill('{unfinished')
+        page.reload(wait_until='domcontentloaded')
+        expect(page.locator('#layout-json')).to_have_value('{unfinished')
+        expect(key(page)).to_contain_text('K')
+        page.locator('#layout-download-json').click()
+        page.locator('#workspace-json-apply').click()
         expect(page.locator('#layout-json-status')).to_contain_text('JSON 错误')
-        expect(page.locator('#inspector-main')).to_have_value('K')
-        page.locator('#layout-json').fill(json.dumps(source))
-        page.locator('#workspace-json-toggle').click()
-        expect(page.locator('#layout-json-card')).not_to_be_visible()
-        # Split preview must select and modify the displayed variant, not the normal key.
-        alpha = lambda main: {'type': 'AlphabetKey', 'main': main, 'alt': '1'}
-        fixture = {'default': {'default': [[alpha('A'), alpha('B')]], '__variant__:split': [[alpha('X'), alpha('Y')]]}}
-        upload(page, fixture)
-        page.locator('.preview-settings > summary').click()
+        expect(page.locator('#layout-json')).to_have_value('{unfinished')
+        page.locator('#layout-json-revert').click()
+        assert layout(page)['default'][0][0]['main'] == 'K'
+        # Split simulation suspends the draft and resumes it on the same source key.
+        key(page).click()
+        page.locator('#inspector-main').fill('D')
+        page.locator('#preview-simulation > summary').click()
+        page.locator('#pt-split').check()
+        expect(page.locator('#inspector-empty')).to_be_visible()
+        page.locator('#pt-split').uncheck()
+        key(page).click()
+        expect(page.locator('#inspector-main')).to_have_value('D')
+        page.locator('#inspector-revert').click()
+        # The split preview edits its actual variant; regular layout remains untouched.
+        upload(page, {'default': {'default': [[alpha('A'), alpha('B')]], '__variant__:split': [[alpha('X'), alpha('Y')]]}})
         page.locator('#pt-split').check()
         key(page).click()
         expect(page.locator('#layout-split-mode')).to_be_checked()
         expect(page.locator('#inspector-main')).to_have_value('X')
         page.locator('#inspector-main').fill('Z')
-        page.locator('#inspector-main').press('Enter')
+        page.locator('#inspector-apply').click()
         data = layout(page)['default']
         assert data['default'][0][0]['main'] == 'A'
         assert data['__variant__:split'][0][0]['main'] == 'Z'
         page.locator('#layout-split-mode').uncheck()
-        key(page).click()
-        expect(page.locator('#inspector-main')).to_have_value('A')
-        # A pending edit may rebuild the selects; it must not swallow the choice.
+        # A guarded selector change must retain the requested destination after apply.
         upload(page, {'first': [[alpha('A')]], 'second': [[alpha('B')]]})
         key(page).click()
         page.locator('#inspector-main').fill('C')
         page.locator('#layout-base-select').select_option('second')
+        expect(page.locator('#layout-base-select')).to_have_value('first')
+        page.locator('#workspace-leave-apply').click()
         expect(page.locator('#layout-base-select')).to_have_value('second')
         assert layout(page)['first'][0][0]['main'] == 'C'
-        key(page).click()
-        page.locator('#inspector-main').fill('invalid')
-        page.locator('#layout-base-select').select_option('first')
-        expect(page.locator('#layout-base-select')).to_have_value('second')
-        page.locator('#tabbtn-theme').click()
-        expect(page.locator('#tab-layout')).to_be_visible()
-        page.locator('#inspector-revert').click()
-        # Quick edits preserve nested events, display maps, and compose overrides.
+        # Preserve Android-specific nested actions and display maps during quick edits.
         fixture = {'custom': [[{'type': 'MacroKey', 'label': 'hello', 'tap': {'macro': [{'type': 'text', 'text': 'hi'}]}, 'displayText': {'schema': 'Hello'}, 'composeOverride': {'type': 'MacroKey', 'label': 'composing', 'tap': {'macro': [{'type': 'text', 'text': 'ok'}]}}}]]}
         upload(page, fixture)
         key(page).click()
         original = layout(page)['custom'][0][0]
         page.locator('#inspector-label').fill('greeting')
-        page.locator('#inspector-label').press('Enter')
+        page.locator('#inspector-apply').click()
         edited = layout(page)['custom'][0][0]
-        assert edited['label'] == 'greeting'
         for prop in ['tap', 'displayText', 'composeOverride']:
             assert edited[prop] == original[prop], prop
-        with page.expect_download() as download:
-            page.locator('#layout-download-json').click()
-        assert json.loads(Path(download.value.path()).read_text()) == layout(page)
-        page.reload(wait_until='domcontentloaded')
-        expect(page.locator('#layout-base-select')).to_have_value('custom')
-        assert layout(page)['custom'][0][0]['label'] == 'greeting'
-        # Actual desktop drag/drop still works with selection and inspector enabled.
+        # Copying a row creates an independent copy and one undo removes it.
+        page.locator('#layout-rows .row-copy').first.click()
+        assert len(layout(page)['custom']) == 2
+        page.locator('#top-undo').click()
+        assert len(layout(page)['custom']) == 1
+        # Desktop drag remains functional after explicit edits.
         upload(page, {'drag': [[alpha('A'), alpha('B'), alpha('C')]]})
         chips = page.locator('#layout-rows .layout-chip')
         chips.nth(0).drag_to(chips.nth(2), target_position={'x': 30, 'y': 15})
         assert layout(page)['drag'][0][-1]['main'] == 'A'
-        # Real touch selection and narrow-width checks.
+        print('PASS workspace drafts, guards, JSON, undo, split, and drag')
+
+        # Switching themes, importing a theme, and saving a slot repaint immediately.
+        page.locator('#tabbtn-icon-theme').click()
+        toolbar = page.locator('#layout-preview > .kb-tb-host')
+        before = toolbar.inner_html()
+        page.locator('.icon-theme-card').nth(1).click()
+        page.wait_for_function('(before) => document.querySelector("#layout-preview > .kb-tb-host").innerHTML !== before', arg=before)
+        upload(page, {'name': 'Toolbar test', 'icons': {'system.toolbar_toggle': 'TEST-A'}}, 'icon-theme-import-json-file')
+        toggle = page.locator('#layout-preview [data-kb-tb-btn="toolbar_toggle"]')
+        expect(toggle).to_contain_text('TEST-A')
+        page.locator('.icon-slot-edit-btn[data-slot="system.toolbar_toggle"]').click()
+        page.locator('#icon-slot-emoji').fill('TEST-B')
+        page.locator('#icon-slot-save').click()
+        expect(toggle).to_contain_text('TEST-B')
+        # Async file icons repaint on completion, deduplicate requests, and ignore late old themes.
+        pending = []
+        page.route('**/api/v1/icon-theme/preview?*', lambda route: pending.append(route))
+        upload(page, {'name': 'Async icons', 'icons': {'system.toolbar_toggle': 'file:button_icons/one.png'}}, 'icon-theme-import-json-file')
+        page.wait_for_timeout(150)
+        assert len(pending) == 1, 'slot and toolbar should share one fetch'
+        pending.pop().fulfill(content_type='image/svg+xml', body='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="red"/></svg>')
+        expect(toggle.locator('.kb-tb-mask')).to_have_attribute('style', re.compile('mask-image:url.*blob:'))
+        upload(page, {'name': 'Late icons', 'icons': {'system.toolbar_toggle': 'file:button_icons/late.png'}}, 'icon-theme-import-json-file')
+        page.wait_for_timeout(150)
+        assert len(pending) == 1
+        page.locator('.icon-theme-card', has_text='Toolbar test').click()
+        expect(toggle).to_contain_text('TEST-B')
+        pending.pop().fulfill(content_type='image/svg+xml', body='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="12"/></svg>')
+        page.wait_for_timeout(100)
+        expect(toggle).to_contain_text('TEST-B')
+        expect(page.locator('.icon-slot-row[data-slot="system.toolbar_toggle"] .icon-slot-custom-preview img')).to_have_count(0)
+        expect(page.locator('.icon-slot-row[data-slot="system.toolbar_toggle"] .icon-slot-custom-preview')).to_contain_text('TEST')
+        # A different file in the same theme/slot must not reuse the previous blob.
+        page.locator('.icon-theme-card', has_text='Async icons').click()
+        icon_source = json.loads(page.locator('#icon-theme-json').input_value())
+        icon_source['icons']['system.toolbar_toggle'] = 'file:button_icons/two.png'
+        page.locator('#icon-theme-json').fill(json.dumps(icon_source))
+        page.locator('#icon-theme-json-format').click()
+        page.wait_for_timeout(150)
+        assert len(pending) == 1, 'changed file reference must fetch a new preview'
+        pending.pop().fulfill(content_type='image/svg+xml', body='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="12" height="12"/></svg>')
+        expect(toggle.locator('.kb-tb-mask')).to_have_attribute('style', re.compile('mask-image:url.*blob:'))
+        page.locator('.icon-theme-card', has_text='Toolbar test').click()
+        # Symbol categories and group clicks keep their toolbar sibling intact.
+        page.locator('#tabbtn-symbols').click()
+        expect(toolbar).to_be_visible()
+        expect(toggle).to_contain_text('TEST-B')
+        for kind in ['symbols', 'emoji', 'kaomoji']:
+            page.locator('#sym-kind').select_option(kind)
+            expect(toolbar).to_be_visible()
+            groups = page.locator('#layout-preview [data-group-index]')
+            if groups.count() > 1:
+                groups.nth(1).click()
+                expect(toolbar).to_be_visible()
+        h = page.locator('#layout-preview').bounding_box()['height']
+        page.locator('#pt-kb-toolbar-status').check()
+        expect(page.locator('#layout-preview .kb-tb-status')).to_be_visible()
+        assert abs(page.locator('#layout-preview').bounding_box()['height'] - h) <= 2
+        page.locator('#pt-kb-toolbar-status').uncheck()
+        page.locator('#pt-kb-toolbar').uncheck()
+        expect(toolbar).to_have_count(0)
+        page.locator('#pt-kb-toolbar').check()
+        expect(toolbar).to_be_visible()
+        # Keep documentation screenshots free of test-only icon text.
+        page.locator('#tabbtn-icon-theme').click()
+        page.locator('.icon-theme-card[data-icon-theme-id="builtin-default"]').click()
+        page.locator('#tabbtn-symbols').click()
+        snapshot(page, 'workspace-symbols-toolbar')
+        print('PASS theme selection, slot save, async icon refresh/race, and symbol toolbar')
+
+        # Full default keyboard screenshots, including selected inspector and dark mode.
+        page.locator('#tabbtn-layout').click()
+        page.on('dialog', lambda d: d.accept())
+        page.locator('#layout-reset').click()
+        key(page).click()
+        page.evaluate('window.scrollTo(0,0)')
+        snapshot(page, 'workspace-desktop-light')
+        page.locator('[data-site-theme="dark"]').click()
+        snapshot(page, 'workspace-desktop-dark')
+        page.locator('[data-site-theme="light"]').click()
+        # Touch uses a bottom sheet with fixed sample and reachable actions on a short viewport.
         mobile = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True, color_scheme='light')
-        mobile.route('**/*', lambda route: route.continue_() if route.request.url.startswith(url) else route.abort())
+        mobile.route('**/*', offline)
         mp = mobile.new_page()
-        mp.on('pageerror', lambda error: errors.append(str(error)))
+        mp.on('pageerror', lambda e: errors.append(str(e)))
         mp.goto(url, wait_until='domcontentloaded')
         expect(mp.locator('body')).to_have_class('layout-workspace-active')
+        assert mp.locator('.tabs').bounding_box()['y'] < mp.locator('#editing-workspace').bounding_box()['y']
         key(mp).tap()
         expect(mp.locator('#inspector-form')).to_be_visible()
-        expect(mp.locator('#inspector-main')).to_have_value('Q')
-        mp.locator('#inspector-back-to-canvas').tap()
-        expect(mp.locator('#inspector-back-to-canvas')).to_be_visible()
-        mp.locator('#layout-rows .layout-chip').first.tap()
-        mp.locator('#inspector-advanced').tap()
-        mp.locator('#layout-key-alt').fill('7')
-        mp.locator('#layout-key-save').tap()
-        expect(mp.locator('#inspector-alt')).to_have_value('7')
-        assert mp.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'mobile horizontal overflow'
+        mp.locator('#inspector-main').fill('M')
+        expect(mp.locator('#inspector-key-face')).to_contain_text('M')
+        assert layout(mp)['default'][0][0]['main'] == 'Q'
+        mp.locator('#inspector-apply').tap()
+        assert layout(mp)['default'][0][0]['main'] == 'M'
         snapshot(mp, 'workspace-mobile')
+        mp.set_viewport_size({'width': 390, 'height': 480})
+        for selector in ['.inspector-sample', '.inspector-actions']:
+            box = mp.locator(selector).bounding_box()
+            assert 0 <= box['y'] and box['y'] + box['height'] <= 481, selector
+        mp.locator('#inspector-close').tap()
+        mp.locator('#layout-rows .layout-chip').first.tap()
+        expect(mp.locator('#layout-key-dialog')).to_be_visible()
+        mp.locator('#layout-key-cancel').tap()
+        assert mp.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'mobile horizontal overflow'
         for width in [360, 768, 1024, 1920]:
             page.set_viewport_size({'width': width, 'height': 900})
-            page.wait_for_timeout(150)
-            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), f'overflow at {width}'
-        assert errors == [], errors
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), f'overflow at {width}px'
+        assert not errors, errors
+        print('PASS desktop/mobile geometry, touch, and zero page errors')
         browser.close()
-        print('PASS: workspace selection, validation, edits, copy/move/delete, undo/redo, advanced editor, tabs, JSON, split variants, nested data, export, draft restore, drag, touch and responsive layout')
 finally:
     server.shutdown()
-    server.server_close()
