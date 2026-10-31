@@ -224,14 +224,14 @@ try:
         # Async file icons repaint on completion, deduplicate requests, and ignore late old themes.
         pending = []
         page.route('**/api/v1/icon-theme/preview?*', lambda route: pending.append(route))
-        upload(page, {'name': 'Async icons', 'icons': {'system.toolbar_toggle': 'file:button_icons/one.png'}}, 'icon-theme-import-json-file')
-        page.wait_for_timeout(150)
-        assert len(pending) == 1, 'slot and toolbar should share one fetch'
+        with page.expect_request(re.compile(r'/api/v1/icon-theme/preview\?')):
+            upload(page, {'name': 'Async icons', 'icons': {'system.toolbar_toggle': 'file:button_icons/one.png'}}, 'icon-theme-import-json-file')
+        assert len(pending) == 1, f'slot and toolbar should share one fetch: {[r.request.url for r in pending]}'
         pending.pop().fulfill(content_type='image/svg+xml', body='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="red"/></svg>')
         expect(toggle.locator('.kb-tb-mask')).to_have_attribute('style', re.compile('mask-image:url.*blob:'))
-        upload(page, {'name': 'Late icons', 'icons': {'system.toolbar_toggle': 'file:button_icons/late.png'}}, 'icon-theme-import-json-file')
-        page.wait_for_timeout(150)
-        assert len(pending) == 1
+        with page.expect_request(re.compile(r'/api/v1/icon-theme/preview\?')):
+            upload(page, {'name': 'Late icons', 'icons': {'system.toolbar_toggle': 'file:button_icons/late.png'}}, 'icon-theme-import-json-file')
+        assert len(pending) == 1, [r.request.url for r in pending]
         page.locator('.icon-theme-card', has_text='Toolbar test').click()
         expect(toggle).to_contain_text('TEST-B')
         pending.pop().fulfill(content_type='image/svg+xml', body='<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="12"/></svg>')
