@@ -5,6 +5,7 @@
   const APP_LONG_IMAGE = { qrSize: 768, padding: 24, textSize: 22, textGap: 12 };
 
   async function decodeQrTextFromImage(image, options) {
+    if (window.EditorLibraries) await window.EditorLibraries.ensure(["jsqr"]);
     const {
       magic,
       parseChunkText,

@@ -1,6 +1,6 @@
 (function () {
   "use strict";
-  const WEB_EDITOR_BUILD = "2026-10-07T00:00+08:00";
+  const WEB_EDITOR_BUILD = "2026-10-31";
   console.info("[web-editor] app.js loaded", WEB_EDITOR_BUILD);
 
   // ── 站点亮/暗主题（借鉴 foxy-see-me）：在首次渲染前应用，避免闪色 ──
@@ -4480,7 +4480,7 @@
     const auxBarConfig = getAuxBarConfig();
     const auxBarKeys = getAuxBarKeys();
     const cfg = state.themeAppSync;
-    const keyVGap = Math.max(0, Number(cfg.keyVGap) || 0);
+    const configuredKeyVGap = Math.max(0, Number(cfg.keyVGap) || 0);
     const punctPos = cfg.punctPos || 'bottom';
     const normalPreviewMetrics = resolvePreviewMetrics(false);
     const previewMetrics = previewSplit ? resolvePreviewMetrics(true) : normalPreviewMetrics;
@@ -4489,6 +4489,8 @@
     // Android 预览也按同一套布局行高渲染，避免切换模式时整块键盘突然变矮。
     const heightMetrics = normalPreviewMetrics || previewMetrics;
     const heightRenderWidth = resolvePreviewKeyboardWidth(root, heightMetrics, false);
+    const previewScale = heightRenderWidth / (heightMetrics?.maxWidth || LIVE_PREVIEW_KEYBOARD_MAX_WIDTH);
+    const keyVGap = configuredKeyVGap * previewScale;
     const heightScale = resolvePreviewHeightScale(heightMetrics, false);
     const previewContentHeight = resolvePreviewContentHeight(rows, heightScale, heightRenderWidth, heightMetrics);
     const fallbackContentHeight = previewContentHeight ?? resolveFallbackContentHeight(heightRenderWidth, false);
@@ -4500,9 +4502,10 @@
     const splitAlignHalves = state.themeAppSync.splitAlignHalves !== false;
     applyPreviewThemeSurface();
     root.style.setProperty('--preview-row-gap', '8px');
-    root.style.setProperty('--preview-key-hgap', `${cfg.keyHGap || 0}px`);
+    root.style.setProperty('--preview-scale', `${previewScale}`);
+    root.style.setProperty('--preview-key-hgap', `${(cfg.keyHGap || 0) * previewScale}px`);
     root.style.setProperty('--preview-key-vgap', `${keyVGap}px`);
-    root.style.setProperty('--preview-key-radius', `${cfg.keyRadius || 0}px`);
+    root.style.setProperty('--preview-key-radius', `${(cfg.keyRadius || 0) * previewScale}px`);
     root.style.setProperty('--preview-keyboard-max-width', `${keyboardRenderWidth}px`);
     root.style.setProperty('--preview-side-padding', `${previewMetrics?.sidePadding || 0}px`);
     root.style.setProperty('--preview-bottom-padding', `${previewMetrics?.bottomPadding || 0}px`);
@@ -4694,11 +4697,7 @@
   function pinPreviewContainerWidth() {
     const root = el("layout-preview");
     if (!root) return;
-    // On narrow viewports, CSS mobile rules set width:100% — clear any desktop pin first.
-    if (window.innerWidth <= 1080) {
-      root.style.width = "";
-      return;
-    }
+    // Every workspace breakpoint uses the same measured keyboard width as its height.
     // 按完整键盘画布定宽，不能用辅助栏内部的主行宽度反向收缩容器。
     const contentWidth = Number.parseFloat(root.style.getPropertyValue("--preview-keyboard-max-width"));
     if (Number.isFinite(contentWidth) && contentWidth > 0) {
@@ -4755,9 +4754,13 @@
   }
 
   function fitLayoutPreviewText() {
+    const scale = Number.parseFloat(el("layout-preview")?.style.getPropertyValue("--preview-scale")) || 1;
     const canvas = fitLayoutPreviewText.canvas || (fitLayoutPreviewText.canvas = document.createElement("canvas"));
     const ctx = canvas.getContext("2d");
     const fitText = (node, maxSize, minSize, weight, reserve = 8) => {
+      maxSize *= scale;
+      minSize *= scale;
+      reserve *= scale;
       const key = node.closest(".layout-key");
       if (!key) return;
       const value = node.textContent || "";
@@ -4767,10 +4770,10 @@
       const isMain = node.classList.contains("layout-key-main");
       const isBottomAlt = node.classList.contains("layout-key-alt") && node.classList.contains("bottom");
       const maxHeight = isMain
-        ? Math.max(8, key.clientHeight - (hasBottomAlt ? 12 : 4))
+        ? Math.max(8 * scale, key.clientHeight - (hasBottomAlt ? 12 : 4) * scale)
         : isBottomAlt
-          ? 10
-          : Math.max(6, Math.floor(key.clientHeight * 0.4));
+          ? 10 * scale
+          : Math.max(6 * scale, Math.floor(key.clientHeight * 0.4));
       let size = maxSize;
       ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif`;
       while (size > minSize && (ctx.measureText(value).width > width || size > maxHeight)) {
@@ -8627,6 +8630,7 @@
   }
 
   async function ensureWasm() {
+    if (window.EditorLibraries) await window.EditorLibraries.ensure(["lzma", "qrious"]);
     if (state.wasmReady) return;
     if (!window.lzma_wasm || typeof window.lzma_wasm.initWasm !== "function") {
       throw new Error("LZMA-Wasm 未加载");
@@ -9408,6 +9412,7 @@
   }
 
   async function buildThemeZipBlob(theme) {
+    if (window.EditorLibraries) await window.EditorLibraries.ensure(["jszip"]);
     if (!window.JSZip) throw new Error("JSZip 未加载");
     const blob = await readThemeBackgroundBlob(theme);
     if (!blob) throw new Error("当前主题无可导出的背景图片");
@@ -9442,6 +9447,7 @@
   }
 
   async function decodeThemeFromZipFile(file) {
+    if (window.EditorLibraries) await window.EditorLibraries.ensure(["jszip"]);
     if (!window.JSZip) throw new Error("JSZip 未加载");
     const zip = await window.JSZip.loadAsync(await file.arrayBuffer());
     const entries = Object.values(zip.files).filter((entry) => !entry.dir);
@@ -11060,6 +11066,7 @@
   // ── ZIP Import (matching app structure) ──
 
   async function importIconThemeFromZipFile(file) {
+    if (window.EditorLibraries) await window.EditorLibraries.ensure(["jszip"]);
     const zip = await JSZip.loadAsync(file);
     let jsonText = null;
     const fileDataMap = {}; // relativePath → base64

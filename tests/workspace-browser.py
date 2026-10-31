@@ -61,7 +61,7 @@ def offline(route):
 
 try:
     with sync_playwright() as p:
-        browser = p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH', '/usr/bin/chromium'), args=['--no-sandbox'])
+        browser = p.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH') or None)
         context = browser.new_context(viewport={'width': 1440, 'height': 1000}, color_scheme='light')
         context.route('**/*', offline)
         page = context.new_page()
@@ -312,9 +312,16 @@ try:
         expect(mp.locator('#layout-key-dialog')).to_be_visible()
         mp.locator('#layout-key-cancel').tap()
         assert mp.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'mobile horizontal overflow'
-        for width in [360, 768, 1024, 1920]:
+        for width in [360, 768, 980, 981, 1024, 1080, 1081, 1440, 1920]:
             page.set_viewport_size({'width': width, 'height': 900})
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), f'overflow at {width}px'
+            page.wait_for_function('''() => {
+                const root = document.querySelector('#layout-preview');
+                const row = root.querySelector('.layout-row .keys');
+                if (!row) return true;
+                const expected = parseFloat(root.style.getPropertyValue('--preview-keyboard-max-width'));
+                return Math.abs(row.getBoundingClientRect().width - expected) < 2;
+            }''')
         assert not errors, errors
         print('PASS desktop/mobile geometry, touch, and zero page errors')
         browser.close()

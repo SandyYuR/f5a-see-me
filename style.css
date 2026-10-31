@@ -2437,21 +2437,8 @@ input[type="checkbox"] {
     min-width: 0;
   }
 
-  .layout-row .keys {
-    width: 100%;
-    max-width: none;
-  }
-
   .theme-preview-extra-side {
     display: none;
-  }
-
-  .layout-preview {
-    width: 100% !important;
-    max-width: 100%;
-    margin: 0;
-    padding-left: 8px;
-    padding-right: 8px;
   }
 
   .layout-preview.layout-preview-split {

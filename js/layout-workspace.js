@@ -15,6 +15,8 @@
     let drafts = {};
     let leaving = null;
     let restored = false;
+    let persistTimer = null;
+    let previewFrame = null;
     const contextKey = () => JSON.stringify([state.selectedBase, state.selectedSubmode, !!state.editingSplit]);
     const sessionKey = s => `${s.context}:${s.row}:${s.index}`;
     const valid = s => s && s.context === contextKey() && s.source === JSON.stringify(getRows());
@@ -25,6 +27,8 @@
     };
 
     function persist() {
+      clearTimeout(persistTimer);
+      persistTimer = null;
       if (!restored) return;
       if (session) {
         if (dirty()) drafts[sessionKey(session)] = clone(session);
@@ -44,12 +48,13 @@
     }
 
     function highlight() {
+      const sessionValid = valid(session);
       document.querySelectorAll("#layout-preview [data-preview-key], #layout-rows .layout-chip").forEach(node => {
         const preview = node.hasAttribute("data-preview-key");
         const row = Number(preview ? node.dataset.previewRow : node.dataset.rowIndex);
         const index = Number(preview ? node.dataset.previewKey : node.dataset.keyIndex);
         const matches = !preview || !state.previewSplit || state.editingSplit || !deps.hasSplitRows();
-        const on = valid(session) && matches && state.activeTab !== "tab-symbols" && row === session.row && index === session.index;
+        const on = sessionValid && matches && state.activeTab !== "tab-symbols" && row === session.row && index === session.index;
         node.classList.toggle("workspace-selected", !!on);
         node.setAttribute("aria-pressed", String(!!on));
       });
@@ -196,6 +201,13 @@
       refresh();
       renderPreview();
       persist();
+      const selected = session;
+      requestAnimationFrame(() => {
+        if (session !== selected || inspector.hidden) return;
+        const input = Array.from(form.querySelectorAll("input:not(:disabled)"))
+          .find(node => !node.closest("label")?.hidden);
+        (input || el("inspector-close")).focus({ preventScroll: true });
+      });
       return true;
     }
 
@@ -238,8 +250,12 @@
       else session.values[prop] = event.target.value;
       status(dirty() ? "有未应用的修改 · 预览中显示草稿" : "已应用 · 修改后点应用保存");
       el("inspector-apply").disabled = !dirty();
-      renderPreview();
-      persist();
+      if (previewFrame === null) previewFrame = requestAnimationFrame(() => {
+        previewFrame = null;
+        renderPreview();
+      });
+      clearTimeout(persistTimer);
+      persistTimer = setTimeout(persist, 200);
     });
     form.addEventListener("submit", event => { event.preventDefault(); apply(); });
     el("inspector-revert").addEventListener("click", revert);
@@ -269,12 +285,24 @@
     el("inspector-delete").addEventListener("click", remove);
     const close = () => {
       if (!guard(close)) return;
+      const previous = session && { row: session.row, index: session.index };
       clear();
       inspector.hidden = true;
       el("editing-workspace").classList.remove("has-inspector");
       renderPreview();
+      requestAnimationFrame(() => {
+        if (previous) document.querySelector(`#layout-preview [data-preview-row="${previous.row}"][data-preview-key="${previous.index}"]`)
+          ?.focus({ preventScroll: true });
+      });
     };
     el("inspector-close").addEventListener("click", close);
+    inspector.addEventListener("keydown", event => {
+      if (event.key === "Escape" && !document.querySelector("dialog[open]")) {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }
+    });
 
     ["layout-base-select", "layout-submode-select", "layout-split-mode"].forEach(id => {
       el(id).addEventListener("change", event => {
@@ -351,6 +379,7 @@
       refresh(); renderPreview();
     }
     window.addEventListener("pagehide", persist);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) persist(); });
     new MutationObserver(highlight).observe(el("layout-preview"), { childList: true });
     new ResizeObserver(entries => {
       inspector.style.setProperty("--inspector-height", `${Math.max(380, Math.round(entries[0].target.getBoundingClientRect().height))}px`);

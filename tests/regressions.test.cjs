@@ -327,7 +327,11 @@ test('预览按完整画布固定宽度，辅助栏不能缩窄整个键盘；�
   const geometry = r.resolveAuxBarPreviewGeometry(config, true, 0.2);
   const html = r.buildAuxBarPreviewHtml(config, [], '', r.state.themeAppSync, geometry);
   assert.match(html, /class="aux-bar-hwrap" style="--aux-bar-size:12%"/);
-  r.context.window.innerWidth = 390; r.pinPreviewContainerWidth(); assert.equal(root.style.width, '');
+  r.context.window.innerWidth = 980;
+  r.pinPreviewContainerWidth(); assert.equal(root.style.width, '596px');
+  root.closest = () => ({ clientWidth: 300 });
+  r.context.window.innerWidth = 390;
+  r.pinPreviewContainerWidth(); assert.equal(root.style.width, '300px');
 });
 
 test('text_editor 总高跟随设备，底栏固定 46dp，窄屏同比缩放并保底 120dp', () => {
