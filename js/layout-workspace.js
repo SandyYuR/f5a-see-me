@@ -4,7 +4,8 @@
   // Unapplied edits are kept outside state.layout and its undo/export snapshots.
   window.createLayoutWorkspace = function (deps) {
     const { el, state, getRows, keyTypeCapabilities, keyTypeLabel, editorKeyLabel,
-      normalizeRowHeightKey, normalizeDraftForSaveByAppRules, sync, openAdvanced, renderPreview } = deps;
+      normalizeRowHeightKey, normalizeDraftForSaveByAppRules, setSplitRowDisabled,
+      sync, openAdvanced, renderPreview } = deps;
     const clone = value => JSON.parse(JSON.stringify(value));
     const storageKey = "f5a-workspace-key-drafts-v2";
     const form = el("inspector-form");
@@ -137,8 +138,10 @@
         normalizeRowHeightKey(key);
         normalizeDraftForSaveByAppRules(key);
         const row = getRows()[session.row];
+        const splitDisabled = row[0]?.splitRowDisabled === true;
         row.splice(session.index, 1);
         row.splice(session.destination, 0, key);
+        setSplitRowDisabled(row, splitDisabled);
         delete drafts[sessionKey(session)];
         session.index = session.destination;
         session.original = clone(key);
@@ -273,13 +276,18 @@
     const duplicate = () => {
       if (!session || !guard(duplicate)) return;
       const { row, index } = session;
-      getRows()[row].splice(index + 1, 0, clone(getRows()[row][index]));
+      const copied = clone(getRows()[row][index]);
+      delete copied.splitRowDisabled;
+      getRows()[row].splice(index + 1, 0, copied);
       clear(); sync(); select(row, index + 1);
     };
     el("inspector-duplicate").addEventListener("click", duplicate);
     const remove = () => {
       if (!session || !guard(remove)) return;
-      getRows()[session.row].splice(session.index, 1);
+      const row = getRows()[session.row];
+      const splitDisabled = row[0]?.splitRowDisabled === true;
+      row.splice(session.index, 1);
+      setSplitRowDisabled(row, splitDisabled);
       clear(); sync();
     };
     el("inspector-delete").addEventListener("click", remove);
@@ -365,6 +373,7 @@
       const row = rows[session.row].map((key, i) => ({ ...key, __workspaceIndex: i }));
       row.splice(session.index, 1);
       row.splice(session.destination, 0, { ...draftKey(), __workspaceIndex: session.index });
+      setSplitRowDisabled(row, rows[session.row][0]?.splitRowDisabled === true);
       result[session.row] = row;
       return result;
     }

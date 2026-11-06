@@ -225,6 +225,56 @@
    * ================================================================ */
 
   var lastRender = null;   /* { host, opts } —— 点击分组后据此就地重渲染 */
+  var stopTextFitting = null;
+
+  PV.dispose = function () {
+    if (stopTextFitting) stopTextFitting();
+    stopTextFitting = null;
+    lastRender = null;
+  };
+
+  /* 与 App 的 AutoScaleTextView.Mode.Proportional 一致：保留单行字形，
+   * 按可用宽高等比缩小。先批量测量、再写样式，避免逐格触发布局。
+   * transform 不改变测量尺寸，容器变宽后可以恢复到原字号。 */
+  function fitCellText(container, cells) {
+    if (typeof root.getComputedStyle !== 'function') return;
+    var active = true;
+    var frame = null;
+    function fit() {
+      frame = null;
+      if (!active) return;
+      var sizes = cells.map(function (cell) {
+        var label = cell.firstElementChild;
+        var style = root.getComputedStyle(cell);
+        var width = cell.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+        var height = cell.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+        if (!label || width <= 0 || height <= 0) return null;
+        return { label: label, scale: Math.min(1, width / Math.max(1, label.offsetWidth),
+          height / Math.max(1, label.offsetHeight)) };
+      });
+      sizes.forEach(function (item) {
+        if (item) item.label.style.transform = 'scale(' + item.scale + ')';
+      });
+    }
+    function schedule() {
+      if (!active || frame != null) return;
+      frame = root.requestAnimationFrame(fit);
+    }
+    fit();
+    var observer = typeof root.ResizeObserver === 'function' ? new root.ResizeObserver(schedule) : null;
+    if (observer) observer.observe(container);
+    var fonts = root.document.fonts;
+    if (fonts) {
+      fonts.ready.then(schedule);
+      fonts.addEventListener('loadingdone', schedule);
+    }
+    stopTextFitting = function () {
+      active = false;
+      if (observer) observer.disconnect();
+      if (frame != null) root.cancelAnimationFrame(frame);
+      if (fonts) fonts.removeEventListener('loadingdone', schedule);
+    };
+  }
 
   function makeEl(tag) {
     return root.document.createElement(tag);
@@ -263,6 +313,7 @@
    * 画不出时返回 null。 */
   PV.render = function (host, opts) {
     if (!host || !root.document) return null;
+    PV.dispose();
     opts = opts || {};
     var unit = (typeof opts.unit === 'number' && opts.unit > 0) ? opts.unit : null;
     if (!unit) {
@@ -290,6 +341,8 @@
     var groups = PV.groups(data);
     var multi = data.multiLine;
     var spec = PV.SPEC;
+    // PickerWindowPreset.kt 的默认字号；multiLine 不表示文字可以换行。
+    var cellFontSp = data.kind === 'kaomoji' ? 15 : (data.kind === 'symbols' ? 18 : spec.cellFontSp);
     var notes = [];
 
     var sel = PV.getSelected(data.kind);
@@ -440,15 +493,16 @@
     rightCol.style.overflowY = 'auto';
     rightCol.style.overflowX = 'hidden';
 
-    var grid = h('div', { class: 'sym-pv-cells' + (multi ? ' sym-pv-multiline' : '') });
-    /* 每行格子数 = multiLine ? 1 : 6（cu.java:85、ly.java:45）。
+    var singleColumn = data.kind === 'kaomoji';
+    var grid = h('div', { class: 'sym-pv-cells' + (singleColumn ? ' sym-pv-multiline' : '') });
+    /* 当前 App 由 PickerWindowPreset.kt 按类别固定列数；multiLine 只保留兼容数据。
      *
      * ⚠️ **必须按行分组渲染，不能用一个 grid 固定 6 等分** —— App 端每凑满一行
      * 就新开一个独立的横向 LinearLayout，格子用 `LayoutParams(0, h, 1.0f)` 在
      * **该行内**等分（ly.java:192-200 新建行、:215-218 加格子）。
      * 后果：**末行不足 6 条时，那几条会各自拉宽占满整行**（2 条各占半宽），
      * 而不是挤在左侧、右边留空。 */
-    var cols = multi ? spec.columnsPerRowMultiLine : spec.columnsPerRow;
+    var cols = singleColumn ? spec.columnsPerRowMultiLine : spec.columnsPerRow;
     grid.style.display = 'flex';
     grid.style.flexDirection = 'column';
     grid.style.gap = PV.dp(spec.cellRowGapDp, unit) + 'px';
@@ -471,36 +525,24 @@
       rowSyms.forEach(function (sym) {
         var cell = h('div', {
           class: 'sym-pv-cell',
-          /* 提示语按 App 实际行为描述：multiLine=false 时格子固定 40dp 高，
-           * 超长条目被**等比缩小**（z9 Proportional）而不是裁掉。 */
-          title: multi ? sym : (sym + '（格高固定 40dp，过长会等比缩小）')
-        }, sym === '' ? '（空）' : sym);
+          title: sym
+        });
+        var label = h('span', { class: 'sym-pv-cell-text' },
+          sym === '' ? '（空）' : String(sym).replace(/\r\n?|\n/g, ' '));
+        cell.appendChild(label);
         cell.style.flex = '1 1 0';
         cell.style.minWidth = '0';   /* flex 子项默认 min-width:auto 会被长内容顶宽 */
-        /* multiLine=true → 行高自适应（WRAP_CONTENT）；false → 固定 40dp */
-        if (multi) {
-          cell.style.minHeight = cH + 'px';
-          cell.style.whiteSpace = 'pre-wrap';
-          cell.style.wordBreak = 'break-all';
-          cell.style.padding = cGap + 'px';
-          cell.style.lineHeight = '1.3';
-        } else {
-          cell.style.height = cH + 'px';
-          cell.style.lineHeight = cH + 'px';
-          cell.style.padding = '0 ' + cGap + 'px';
-          /* ⚠️ 这里用 nowrap + overflow hidden 作**视觉近似**：
-           * App 给格子设了 `setScaleMode(y9.a)` = Proportional（ly.java:206、
-           * y9.java:19），z9 会取 min(1, 宽比, 高比) 再把文字**等比缩小**画进去
-           * （z9.java:102-105、259），即「变小」而非「裁掉」。浏览器没有等价的
-           * 自动缩字，故用截断近似；想精确复现需按 文字宽/格宽 换算 font-size。 */
-          cell.style.whiteSpace = 'nowrap';
-          cell.style.overflow = 'hidden';
-          cell.style.textOverflow = 'ellipsis';
-        }
+        cell.style.height = cH + 'px';
+        cell.style.padding = '0 ' + cGap + 'px';
+        cell.style.whiteSpace = 'nowrap';
+        cell.style.overflow = 'hidden';
+        cell.style.display = 'flex';
+        cell.style.alignItems = 'center';
+        cell.style.justifyContent = 'center';
         cell.style.boxSizing = 'border-box';
         cell.style.marginLeft = cGap + 'px';
         cell.style.marginRight = cGap + 'px';
-        cell.style.fontSize = PV.dp(spec.cellFontSp, unit) + 'px';
+        cell.style.fontSize = PV.dp(cellFontSp, unit) + 'px';
         cell.style.textAlign = 'center';
         /* 圆角 6dp 且 clamp 到「短边一半」（ly.java:335-340）。 */
         cell.style.borderRadius = Math.min(cRadius, cH / 2) + 'px';
@@ -520,6 +562,7 @@
 
     /* ---- 挂上去 ---- */
     host.appendChild(panel);
+    fitCellText(rightCol, cellEls);
 
     /* ---- 恢复左列滚动位置（见 rememberGroupScroll） ----
      * ⚠️ **必须放在填充分组项、且挂进文档之后**，不能挪到创建时：真实浏览器里
@@ -534,10 +577,9 @@
       ? root.F5aSymbolPanel.kindMeta(data.kind) : { label: data.kind };
     notes.push('符号面板预览 · ' + meta.label + ' · 分组 ' + groups.length +
       ' 个 · 当前「' + (cur.name || '（未命名）') + '」' + cur.count + ' 条 · 每行 ' +
-      cols + ' 格（' + (multi ? 'multiLine=true → 1 格/行、高自适应'
-        : 'multiLine=false → 6 格/行、格高固定 40dp') + '）');
+      cols + ' 格，格高固定 40dp；长条目单行等比缩小，不换行');
     notes.push('左列 ' + spec.panelLeftColDp + 'dp 为分组列表与 ⌨/⌫；格子字号 ' +
-      spec.cellFontSp + 'sp、圆角 ' + spec.cellCornerDp + 'dp；面板底与键盘底同色' +
+      cellFontSp + 'sp、圆角 ' + spec.cellCornerDp + 'dp；面板底与键盘底同色' +
       '（键边框联动）。面板(.sym-pv 576)与键盘画布(.layout-row .keys 576)同宽,各比宿主(#layout-preview 596)窄 10px 内边距，分组区与符号区各自滚动' +
       '（对齐 App 的两个 ScrollView）。⚠️ App 会在最前面插入运行时生成的' +
       '「最近」分组，编辑器没有该状态，故预览不显示。');

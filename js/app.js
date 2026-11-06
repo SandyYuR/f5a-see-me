@@ -531,7 +531,7 @@
 
   const iconThemeToolbarSlots = [
     "toolbar.undo", "toolbar.redo", "toolbar.cursor_move",
-    "toolbar.floating_toggle", "toolbar.clipboard", "toolbar.more",
+    "toolbar.floating_toggle", "toolbar.clipboard", "toolbar.ai_assistant", "toolbar.more",
     "toolbar.language_switch", "toolbar.theme", "toolbar.random_theme", "toolbar.icon_theme",
     "toolbar.input_method_options", "toolbar.reload_config",
     "toolbar.virtual_keyboard", "toolbar.one_handed_keyboard",
@@ -3941,6 +3941,7 @@
   // 分体预览：奇数字符行复制几何中间键（app splitKeyboardDuplicateMiddleKey 默认开）。
   // 复制键带 __dupOf 指回原键下标，点击编辑仍落到原键。
   function duplicateMiddleKeyForPreview(row) {
+    if (row?.[0]?.splitRowDisabled === true) return row;
     if (!row || row.length < 3 || row.length % 2 === 0) return row;
     if (row.some((k) => k.type === "SpaceKey" || k.type === "MiniSpaceKey")) return row;
     if (row.some((k) => k.splitAfter === true)) return row;
@@ -4037,6 +4038,7 @@
   //   占位键按绝对宽 × (1-gap) 位移；两侧之和超 1-2% 时 fitSides 等比压窄保底
   function resolveSplitRowLayout(row, gapFrac, alignHalves, keyAreaScale = 1) {
     if (!row || row.length < 2) return null;
+    if (row[0].splitRowDisabled === true) return null;
     const keyWeightOf = (key) => {
       const n = Number(keyWeight(key));
       return Number.isFinite(n) && n > 0 ? n : 0;
@@ -4438,6 +4440,7 @@
 
   /* 离开符号页签：把说明收起来、把 meta 还给键盘预览。 */
   function leaveSymbolPanelPreview() {
+    window.F5aSymbolPreview?.dispose();
     const notesEl = el("symbol-preview-notes");
     if (notesEl) { notesEl.hidden = true; notesEl.textContent = ""; }
     const metaEl = el("layout-preview-meta");
@@ -5193,12 +5196,20 @@
     syncLayoutUiFromState();
   }
 
+  // Row metadata stays with the row when its first key is edited or moved.
+  function setSplitRowDisabled(row, disabled) {
+    row.forEach(key => { delete key.splitRowDisabled; });
+    if (disabled && row[0]) row[0].splitRowDisabled = true;
+  }
+
   function deleteKey(rowIndex, keyIndex) {
     if (layoutWorkspace && !layoutWorkspace.guard(() => deleteKey(rowIndex, keyIndex))) return;
     const rows = getRows();
     if (!rows[rowIndex] || keyIndex < 0 || keyIndex >= rows[rowIndex].length) return;
     layoutWorkspace?.clear();
+    const splitDisabled = rows[rowIndex][0]?.splitRowDisabled === true;
     rows[rowIndex].splice(keyIndex, 1);
+    setSplitRowDisabled(rows[rowIndex], splitDisabled);
     syncLayoutUiFromState();
   }
 
@@ -5686,6 +5697,8 @@
     if (!rows[fromRow] || !rows[toRow]) return null;
     if (fromIndex < 0 || fromIndex >= rows[fromRow].length) return null;
     layoutWorkspace?.clear();
+    const sourceSplitDisabled = rows[fromRow][0]?.splitRowDisabled === true;
+    const targetSplitDisabled = rows[toRow][0]?.splitRowDisabled === true;
     const [key] = rows[fromRow].splice(fromIndex, 1);
     const adjusted = fromRow === toRow && toIndex > fromIndex ? toIndex - 1 : toIndex;
     const nextIndex = Math.max(0, Math.min(adjusted, rows[toRow].length));
@@ -5694,6 +5707,8 @@
       return null;
     }
     rows[toRow].splice(nextIndex, 0, key);
+    setSplitRowDisabled(rows[fromRow], sourceSplitDisabled);
+    if (fromRow !== toRow) setSplitRowDisabled(rows[toRow], targetSplitDisabled);
     if (shouldSync) syncLayoutUiFromState();
     return { row: toRow, index: nextIndex };
   }
@@ -10711,6 +10726,10 @@
     "system.voice_input": `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>`
   };
 
+  // Google Material Symbols auto_awesome, as shipped by the App.
+  // Copyright Google LLC; Apache-2.0, see licenses/material-symbols-LICENSE.txt.
+  DEFAULT_ICON_SVGS['toolbar.ai_assistant'] = `<svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M19,9 L17.75,6.25 15,5 17.75,3.75 19,1 20.25,3.75 23,5 20.25,6.25ZM19,23 L17.75,20.25 15,19 17.75,17.75 19,15 20.25,17.75 23,19 20.25,20.25ZM9,20 L6.5,14.5 1,12 6.5,9.5 9,4 11.5,9.5 17,12 11.5,14.5ZM9,15.15 L10,13 12.15,12 10,11 9,8.85 8,11 5.85,12 8,13ZM9,12Z"/></svg>`;
+
   function getDefaultSlotPreviewHtml(slot) {
     return DEFAULT_ICON_SVGS[slot] || `<svg viewBox="0 0 24 24" width="18" height="18"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/></svg>`;
   }
@@ -12230,7 +12249,7 @@
     if (window.createLayoutWorkspace) {
       layoutWorkspace = window.createLayoutWorkspace({
         el, state, getRows, keyTypeCapabilities, keyTypeLabel, editorKeyLabel,
-        normalizeRowHeightKey, normalizeDraftForSaveByAppRules,
+        normalizeRowHeightKey, normalizeDraftForSaveByAppRules, setSplitRowDisabled,
         sync: syncLayoutUiFromState, openAdvanced: openKeyEditorDialog, renderPreview: renderLayoutPreview,
         hasSplitRows: () => !!getVariantRows(state.selectedBase, state.selectedSubmode)
       });

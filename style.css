@@ -3776,9 +3776,14 @@ html.site-light .sym-entry.selected {
 }
 
 .sym-pv-cell {
-  /* App 端格子在 non-multiLine 下是等比缩小画字，网页用截断近似；
-   * 无论哪条路都不该出现横向滚动条。 */
-  overflow-wrap: anywhere;
+  overflow: hidden;
+}
+
+.sym-pv-cell-text {
+  flex: 0 0 auto;
+  white-space: pre;
+  line-height: 1.3;
+  transform-origin: center;
 }
 
 .sym-pv-empty {

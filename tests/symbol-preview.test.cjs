@@ -166,7 +166,7 @@ test('分组显示名与左侧编辑列表同一口径(走 SP.groupDisplayNames)
   assert.equal(groups[0].symbols[0], '1');
 });
 
-test('三类数据的 multiLine 决定每行 1 格还是 6 格', () => {
+test('三类内置数据保留兼容标记与默认列数', () => {
   const { PV, SP } = load();
   const cases = [
     ['symbols', false, 6],
@@ -281,18 +281,18 @@ test('渲染:按行分组,末行不足 6 条不补空位(格子 flex 等分)', (
     assert.equal(c.style.flex, '1 1 0', '行内等分靠 flex');
     assert.equal(c.style.minWidth, '0');
     assert.equal(c.style.height, '40px');
-    assert.equal(c.style.lineHeight, '40px');
-    assert.equal(c.style.fontSize, '22px');
+    assert.equal(c.style.alignItems, 'center');
+    assert.equal(c.style.fontSize, '18px');
     assert.equal(c.style.borderRadius, '6px');
     assert.equal(c.style.background, 'rgb(66, 55, 53)');
     assert.equal(c.style.color, 'rgb(241, 222, 220)');
   });
   /* 首格内容就是该组第一条符号 */
-  assert.equal(out.cells[0].textContent, '1');
+  assert.equal(out.cells[0].children[0].textContent, '1');
   SP.getState().kind = 'symbols';
 });
 
-test('渲染:颜文字(multiLine)每行 1 格、高自适应、不截断', () => {
+test('渲染:颜文字和表情均固定格高、单行显示完整文本', () => {
   const { PV, SP, doc } = load();
   SP.getState().kind = 'kaomoji';
   const h = host(doc);
@@ -301,21 +301,32 @@ test('渲染:颜文字(multiLine)每行 1 格、高自适应、不截断', () =>
   assert.equal(out.columns, 1);
   out.rows.forEach((row) => assert.equal(row.children.length, 1));
   out.cells.forEach((c) => {
-    assert.equal(c.style.minHeight, '40px');
-    assert.equal(c.style.height, undefined, 'multiLine 用 minHeight,不固定高度');
-    assert.equal(c.style.whiteSpace, 'pre-wrap');
-    assert.equal(c.style.wordBreak, 'break-all');
-    assert.equal(c.style.lineHeight, '1.3');
+    assert.equal(c.style.height, '40px');
+    assert.equal(c.style.whiteSpace, 'nowrap');
+    assert.equal(c.style.textOverflow, undefined, '完整字形交给比例缩放，不使用省略号');
+    assert.equal(c.style.fontSize, '15px', '对齐 App 的颜文字默认字号');
+    assert.ok(c.children[0].textContent.length > 0);
   });
-  /* 非 multiLine 才用 nowrap 截断近似 */
   const h2 = host(doc);
   SP.getState().kind = 'emoji';
   const out2 = PV.render(h2, opts({ unit: 36 }));
   out2.cells.forEach((c) => {
     assert.equal(c.style.whiteSpace, 'nowrap');
-    assert.equal(c.style.textOverflow, 'ellipsis');
+    assert.equal(c.style.textOverflow, undefined);
   });
   SP.getState().kind = 'symbols';
+});
+
+test('渲染:导入相反的旧兼容标记不会改变当前 App 的列数', () => {
+  const { PV, SP, doc } = load();
+  SP.getState().kind = 'kaomoji';
+  SP.getState().profiles.kaomoji = { ...SP.builtinProfile('kaomoji'), multiLine: false };
+  assert.equal(PV.render(host(doc), opts()).columns, 1);
+  assert.equal(SP.getState().profiles.kaomoji.multiLine, false, '预览不改写导出数据');
+  SP.getState().kind = 'symbols';
+  SP.getState().profiles.symbols = { ...SP.builtinProfile('symbols'), multiLine: true };
+  assert.equal(PV.render(host(doc), opts()).columns, 6);
+  assert.equal(SP.getState().profiles.symbols.multiLine, true);
 });
 
 test('渲染:点击分组切换选中并就地重渲染,滚动位置不丢', () => {

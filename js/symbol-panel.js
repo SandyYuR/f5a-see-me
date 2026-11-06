@@ -9,8 +9,8 @@
  *       { "names": {"zh":...,"zh-Hant":...,"en":...}, "symbols": ["...","..."] } ] };
  *   · 组名走语言回退链(FE.symbolGroupLabel);
  *   · 空 names / 空 symbols 的组会被 App **整组静默丢弃** → 校验器报警;
- *   · multiLine 语义:true → 每行 1 格、行高自适应;false → 每行 6 格、固定 40dp 高,
- *     多字符条目会被**等比缩小**到很小(不是裁掉,只是难认),校验器给 warn;
+ *   · 当前 App 按类别固定列数：颜文字 1 列，符号/Emoji 6 列；条目均单行等比缩小。
+ *     multiLine 只保留旧版兼容数据；多列中的长条目可读性较差，校验器给 warn;
  *   · 旧格式兼容:顶层直接是数组时按 {multiLine:false, groups:[...]} 处理;
  *   · 三类是**独立文件**,彼此不共用 multiLine。
  *
@@ -232,7 +232,7 @@
       errors.push('groups 必须是非空数组(空文件在 App 端会抛 empty catalog)');
       return { errors: errors, warnings: warnings };
     }
-    var multiLine = Array.isArray(p) ? false : (p.multiLine === true || p.multiLine === 'true');
+    var singleColumn = kind === 'kaomoji';
 
     var dropped = [], missingZh = [], badNames = [], badSymbols = [], nonString = 0;
     var multi = 0, multiSample = '';
@@ -249,7 +249,7 @@
       totalEntries += symbols.length;
       symbols.forEach(function (s) {
         if (typeof s !== 'string') nonString++;
-        if (multiLine) return;
+        if (singleColumn) return;
         if (SP.graphemeCount(s) > 1) {
           multi++;
           if (!multiSample) multiSample = String(s);
@@ -262,13 +262,13 @@
     if (dropped.length) warnings.push(dropped.join('、') + ' 的 names 或 symbols 为空 —— App 端会整组静默丢弃');
     if (missingZh.length) warnings.push(missingZh.join('、') + ' 缺少 zh 组名(App 会走回退链取第一个可用的名字)');
     if (nonString) warnings.push(nonString + ' 个条目不是字符串(已按字符串处理)');
-    /* 只有多字符条目占了相当比例(>25%)才提示开 multiLine:少量多字符条目
+    /* 只有多字符条目占了相当比例(>25%)才提示使用颜文字面板:少量多字符条目
      * (拼音、国际音标)是这类目录的常态,全部报警等于没报。 */
     if (multi && multi / Math.max(1, totalEntries) > 0.25) {
-      warnings.push('multiLine 为 false 但有 ' + multi + ' / ' + totalEntries +
+      warnings.push('多列面板有 ' + multi + ' / ' + totalEntries +
         ' 个多字符条目(如「' + ellipsis(multiSample, 12) +
         '」):App 端格子固定 40dp 高,这类条目会被等比缩小到很小(不是裁掉,只是可读性差);' +
-        '若整份文件都是这种长条目,应开启 multiLine');
+        '若整份文件都是这种长条目,建议放入单列的颜文字面板');
     }
     return { errors: errors, warnings: warnings, multiCharCount: multi, entryCount: totalEntries };
   };
@@ -543,7 +543,7 @@
         <label>en</label>
         <input class="mini-input" data-sym-name="en" data-gi="${gi}" value="${escapeHtml(names.en || '')}" placeholder="可选">
       </div>
-      <div class="sym-entry-grid${profile().multiLine ? ' multi-line' : ''}">${entryHtml || '<span class="status">(空分组,会被 App 丢弃)</span>'}</div>
+      <div class="sym-entry-grid${state.kind === 'kaomoji' ? ' multi-line' : ''}">${entryHtml || '<span class="status">(空分组,会被 App 丢弃)</span>'}</div>
       <div class="toolbar sym-group-toolbar">
         <input class="mini-input" data-sym-new-entry="${gi}" placeholder="新增条目(可含多个词,按空格拆)">
         <button type="button" class="mini-button" data-sym-add-entry="${gi}">添加到末尾</button>
@@ -804,7 +804,7 @@
     if (chk) {
       chk.addEventListener('change', function () {
         profile().multiLine = chk.checked;
-        markDirty(chk.checked ? '已开启 multiLine(每行 1 格,高度自适应)' : '已关闭 multiLine(每行 6 格,固定 40dp 高)');
+        markDirty('已更新旧版单列兼容标记；当前 App 和预览仍按面板类别排列，长条目单行缩小');
         SP.render();
       });
     }

@@ -39,7 +39,8 @@ function loadApp() {
       resolvePreviewKey, resolveAuxBarPreviewGeometry, resolveSplitRowLayout, getAuxBarConfig, getAuxBarKeys,
       setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows,
       pinPreviewContainerWidth, resolveTextEditorPreviewRows, resolveTextEditorPreviewGeometry,
-      buildTextEditorPreviewHtml, textEditorPreviewButtonColors, textEditorPreviewKeyFaceHtml };
+      buildTextEditorPreviewHtml, textEditorPreviewButtonColors, textEditorPreviewKeyFaceHtml,
+      duplicateMiddleKeyForPreview, moveKey, deleteKey };
   `;
   const source = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
   assert.ok(source.includes('\n  main();'));
@@ -53,6 +54,45 @@ function loadApp() {
 }
 const layout = label => ({ default: [[{ type: 'AlphabetKey', main: label, alt: '1' }]] });
 const main = r => r.state.layout.default[0][0].main;
+
+test('本行保持连贯：分体预览既不复制中间键也不插入中缝', () => {
+  const r = loadApp();
+  const row = ['a', 'b', 'c'].map(main => ({ type: 'AlphabetKey', main }));
+  row[0].splitRowDisabled = true;
+  assert.equal(r.duplicateMiddleKeyForPreview(row), row);
+  assert.equal(r.resolveSplitRowLayout(row, 0.2, true), null);
+  delete row[0].splitRowDisabled;
+  assert.equal(r.duplicateMiddleKeyForPreview(row).length, 4);
+  assert.notEqual(r.resolveSplitRowLayout(row, 0.2, true), null);
+});
+
+test('本行保持连贯：跨行移动首键保留两行的独立设置', () => {
+  const r = loadApp();
+  r.state.layout = { default: [
+    [{ type: 'AlphabetKey', main: 'a', splitRowDisabled: true }, { type: 'AlphabetKey', main: 'b' }],
+    [{ type: 'AlphabetKey', main: 'c' }, { type: 'AlphabetKey', main: 'd' }]
+  ] };
+  r.state.selectedBase = 'default'; r.state.selectedSubmode = 'default'; r.state.editingSplit = false;
+  r.moveKey(0, 0, 1, 0, false);
+  const rows = r.getRows();
+  assert.equal(rows[0][0].splitRowDisabled, true);
+  assert.ok(rows[1].every(key => key.splitRowDisabled === undefined));
+  rows[1][0].splitRowDisabled = true;
+  r.moveKey(1, 1, 1, 0, false);
+  assert.equal(rows[1][0].splitRowDisabled, true);
+  assert.ok(rows[1].slice(1).every(key => key.splitRowDisabled === undefined));
+});
+
+test('本行保持连贯：删除首键后标记交给下一键', () => {
+  const r = loadApp();
+  r.state.layout = { default: [[
+    { type: 'AlphabetKey', main: 'a', splitRowDisabled: true }, { type: 'AlphabetKey', main: 'b' }
+  ]] };
+  r.state.selectedBase = 'default'; r.state.selectedSubmode = 'default'; r.state.editingSplit = false;
+  r.deleteKey(0, 0);
+  assert.equal(r.getRows()[0][0].main, 'b');
+  assert.equal(r.getRows()[0][0].splitRowDisabled, true);
+});
 
 test('快速修改 C 后撤销到 B、重做到 C；草稿始终保存当前状态', () => {
   const r = loadApp();
