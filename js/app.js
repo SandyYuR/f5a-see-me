@@ -517,37 +517,80 @@
   }
 
   // ── Icon Theme ──
-  const iconThemeKeySlots = [
+  // Slot catalog mirrors IconTheme.kt ALL_SLOTS (114 entries on the App side):
+  // KEY_SLOTS 34 + LETTER_SLOTS 26 + NUMPAD_KEY_SLOTS 20 + TOOLBAR_SLOTS 26 + SYSTEM_SLOTS 8.
+  const iconThemeKeyboardSlots = [
     "keys.capslock.none", "keys.capslock.once", "keys.capslock.lock",
     "keys.backspace",
     "keys.return.default", "keys.return.go", "keys.return.search",
     "keys.return.send", "keys.return.next", "keys.return.previous", "keys.return.done",
-    "keys.language", "keys.space",
+    "keys.language", "keys.language_ascii", "keys.space", "keys.comma", "keys.period",
     "keys.numpad", "keys.emoji", "keys.symbols", "keys.unicode",
     "keys.pageup", "keys.pagedown",
     "keys.cursor_up", "keys.cursor_down", "keys.cursor_left", "keys.cursor_right",
     "keys.home", "keys.end"
   ];
 
+  const iconThemeTextEditorSlots = [
+    "text_editor.select_all", "text_editor.cut", "text_editor.copy",
+    "text_editor.paste", "text_editor.backspace", "text_editor.layout"
+  ];
+
+  const iconThemeLetterSlots = "abcdefghijklmnopqrstuvwxyz".split("").map((c) => `keys.letter.${c}`);
+
+  const iconThemeNumpadSlots = [
+    "keys.numpad.0", "keys.numpad.1", "keys.numpad.2", "keys.numpad.3", "keys.numpad.4",
+    "keys.numpad.5", "keys.numpad.6", "keys.numpad.7", "keys.numpad.8", "keys.numpad.9",
+    "keys.numpad.add", "keys.numpad.subtract", "keys.numpad.multiply", "keys.numpad.divide",
+    "keys.numpad.equal", "keys.numpad.decimal", "keys.numpad.at", "keys.numpad.percent",
+    "keys.numpad.space", "keys.numpad.layout"
+  ];
+
   const iconThemeToolbarSlots = [
     "toolbar.undo", "toolbar.redo", "toolbar.cursor_move",
-    "toolbar.floating_toggle", "toolbar.clipboard", "toolbar.ai_assistant", "toolbar.more",
-    "toolbar.language_switch", "toolbar.theme", "toolbar.random_theme", "toolbar.icon_theme",
-    "toolbar.input_method_options", "toolbar.reload_config",
-    "toolbar.virtual_keyboard", "toolbar.one_handed_keyboard",
+    "toolbar.floating_toggle", "toolbar.split_keyboard", "toolbar.clipboard",
+    "toolbar.ai_assistant", "toolbar.js_tools", "toolbar.more",
+    "toolbar.language_switch", "toolbar.language_switch_ascii",
+    "toolbar.theme", "toolbar.theme_toggle", "toolbar.random_theme", "toolbar.icon_theme",
+    "toolbar.input_method_options", "toolbar.switch_input_method", "toolbar.rime_schema_menu",
+    "toolbar.reload_config", "toolbar.virtual_keyboard", "toolbar.one_handed_keyboard",
     "toolbar.browse_user_data", "toolbar.settings_global",
     "toolbar.settings_ime", "toolbar.edit_layout", "toolbar.edit_fontset"
   ];
 
   const iconThemeSystemSlots = [
-    "system.toolbar_toggle", "system.hide_keyboard", "system.voice_input"
+    "system.toolbar_toggle", "system.hide_keyboard", "system.voice_input",
+    "system.back", "system.editor_info", "system.settings",
+    "system.clipboard_delete", "system.clipboard_search"
   ];
 
-  const iconThemeSlotsAll = [...iconThemeKeySlots, ...iconThemeToolbarSlots, ...iconThemeSystemSlots];
+  const iconThemeKeySlots = [...iconThemeKeyboardSlots, ...iconThemeTextEditorSlots];
+  const iconThemeSlotsAll = [
+    ...iconThemeKeySlots, ...iconThemeLetterSlots, ...iconThemeNumpadSlots,
+    ...iconThemeToolbarSlots, ...iconThemeSystemSlots
+  ];
+
+  const iconThemeSlotSections = [
+    { title: "键盘功能键 (仅支持 SVG)", slots: iconThemeKeyboardSlots },
+    { title: "文本编辑栏 (仅支持 SVG)", slots: iconThemeTextEditorSlots },
+    { title: "字母键 (仅支持 SVG)", slots: iconThemeLetterSlots },
+    { title: "数字键盘 (仅支持 SVG)", slots: iconThemeNumpadSlots },
+    { title: "工具栏按钮 (支持文本/Emoji/SVG/PNG)", slots: iconThemeToolbarSlots },
+    { title: "系统按钮 (支持文本/Emoji/SVG/PNG)", slots: iconThemeSystemSlots }
+  ];
+
+  const iconThemeNumpadGlyphs = {
+    add: "+", subtract: "−", multiply: "×", divide: "÷", equal: "=",
+    decimal: ".", at: "@", percent: "%", space: "空格", layout: "布局键"
+  };
 
   function iconThemeSlotToDisplayName(slot) {
+    const letter = /^keys\.letter\.([a-z])$/.exec(slot);
+    if (letter) return `字母 ${letter[1].toUpperCase()}`;
+    const numpad = /^keys\.numpad\.(.+)$/.exec(slot);
+    if (numpad) return `数字 ${iconThemeNumpadGlyphs[numpad[1]] || numpad[1]}`;
     return slot
-      .replace(/^(keys|toolbar|system)\./, "")
+      .replace(/^(keys|text_editor|toolbar|system)\./, "")
       .replace(/\./g, " / ")
       .replace(/_/g, " ")
       .split(" ")
@@ -557,6 +600,10 @@
 
   function iconThemeSlotSupportsText(slot) {
     return slot.startsWith("toolbar.") || slot.startsWith("system.");
+  }
+
+  function isIconThemeSvgOnlySlot(slot) {
+    return slot.startsWith("keys.") || slot.startsWith("text_editor.");
   }
 
   function createDefaultIconTheme(name = "Default") {
@@ -585,6 +632,7 @@
     themeSourceFilter: "all",
     randomTheme: null,
     iconThemeListFilter: "",
+    iconThemeSlotFilter: "",
     selectedBase: "default",
     selectedSubmode: DEFAULT_SUBMODE,
     // 分体布局编辑态：勾选「分体键盘布局」后，行编辑/预览/保存都作用于当前条目的
@@ -596,6 +644,7 @@
     // 状态区是 toolbar_toggle 升起的独立窗口，默认关闭。
     previewKbToolbar: true,
     previewKbToolbarStatus: false,
+    previewKbToolbarExtra: "",
     suppressLayoutJsonInput: false,
     wasmReady: false,
     wasmInitPromise: null,
@@ -2556,6 +2605,7 @@
     });
     bindThemeFilters();
     bindIconThemeFilter();
+    bindIconThemeSlotFilter();
     setActiveTab(state.activeTab || "tab-layout");
   }
 
@@ -4220,7 +4270,101 @@
     ReturnKey: `<svg class="layout-key-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 7v4H5.83l3.58-3.59L8 6l-6 6 6 6 1.41-1.41L5.83 13H21V7h-2z"/></svg>`
   };
 
+  // App KeyDef.effectiveIconSlot = 显式 iconSlotOverride ?: 类型默认槽位。
+  // 显式值即使是未知槽位也会遮住默认值（App 端同样按显式值查表）。
+  function explicitIconSlotOf(key) {
+    const raw = key && key.iconSlot;
+    return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+  }
+
+  function letterIconSlotOfText(text) {
+    const value = String(text == null ? "" : text);
+    if (!/^[A-Za-z]$/.test(value)) return null;
+    return `keys.letter.${value.toLowerCase()}`;
+  }
+
+  function automaticIconSlotOf(key) {
+    if (!key || typeof key !== "object") return null;
+    switch (key.type) {
+      case "AlphabetKey": return letterIconSlotOfText(key.main);
+      case "MacroKey": {
+        const visible = typeof key.displayText === "string" && key.displayText
+          ? key.displayText : String(key.label == null ? "" : key.label);
+        const slot = letterIconSlotOfText(visible);
+        if (!slot) return null;
+        const steps = Array.isArray(key.tap?.macro) ? key.tap.macro : [];
+        if (steps.length !== 1) return null;
+        const step = steps[0];
+        if (!step || typeof step !== "object" || (step.type || "tap") !== "tap") return null;
+        const keys = Array.isArray(step.keys) ? step.keys : [];
+        if (keys.length !== 1) return null;
+        const ref = keys[0];
+        if (!ref || typeof ref !== "object" || ref.fcitx == null) return null;
+        return String(ref.fcitx).toLowerCase() === visible.toLowerCase() ? slot : null;
+      }
+      case "CapsKey": return "keys.capslock.none";
+      case "BackspaceKey": return "keys.backspace";
+      case "ReturnKey": return "keys.return.default";
+      case "LanguageKey": return "keys.language";
+      case "MiniSpaceKey": return "keys.space";
+      case "CommaKey": return "keys.emoji";
+      default: return null;
+    }
+  }
+
+  function effectiveIconSlotOf(key) {
+    return explicitIconSlotOf(key) || automaticIconSlotOf(key);
+  }
+
+  function iconThemeValueForSlot(slot) {
+    if (!slot) return null;
+    const theme = currentIconThemeEntry && currentIconThemeEntry();
+    const raw = theme && theme.icons ? theme.icons[slot] : null;
+    return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+  }
+
+  function keyIconPreviewHtml(key) {
+    const slot = effectiveIconSlotOf(key);
+    if (!slot) return "";
+    const value = iconThemeValueForSlot(slot);
+    if (!value) return "";
+    const themeName = (currentIconThemeEntry() || {}).name || "";
+    if (isLocalIconRef(value)) {
+      return `<img class="layout-key-icon" src="${escapeAttr(value)}" alt="">`;
+    }
+    if (isFileIconRef(value)) {
+      const cached = iconThemePreviewCache.get(iconPreviewCacheKey(themeName, slot, value));
+      if (!cached) {
+        if (IME_API_BASE) fetchIconFilePreview(themeName, slot, value);
+        return "";
+      }
+      return `<img class="layout-key-icon" src="${escapeAttr(cached)}" alt="">`;
+    }
+    if (isInlineXmlDrawableValue(value)) {
+      const converted = vectorDrawableToSvg(value);
+      if (converted) return keyIconPreviewHtmlFromSvg(converted);
+      return "";
+    }
+    if (isInlineSvgValue(value)) return keyIconPreviewHtmlFromSvg(value);
+    return `<span class="layout-key-icon layout-key-icon-text">${escapeHtml(value)}</span>`;
+  }
+
+  function keyIconPreviewHtmlFromSvg(svg) {
+    const TB = window.F5aToolbarPreview;
+    if (!TB || !TB.svgDataUrl) {
+      return `<img class="layout-key-icon" src="${escapeAttr("data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg))}" alt="">`;
+    }
+    const url = TB.svgDataUrl(svg);
+    if (!url) return "";
+    if (TB.iconTintable(svg)) {
+      return `<span class="layout-key-icon layout-key-icon-mask" style="--icon-src:url('${url}')"></span>`;
+    }
+    return `<img class="layout-key-icon" src="${escapeAttr(url)}" alt="">`;
+  }
+
   function previewKeyFaceHtml(key) {
+    const themeIcon = keyIconPreviewHtml(key);
+    if (themeIcon) return themeIcon;
     const icon = PREVIEW_SPECIAL_KEY_ICONS[key?.type];
     return icon || escapeHtml(previewTitleFromObj(key));
   }
@@ -4291,6 +4435,8 @@
   }
 
   function textEditorPreviewKeyFaceHtml(key) {
+    const themeIcon = keyIconPreviewHtml(key);
+    if (themeIcon) return themeIcon;
     if (key.type === "LanguageKey" || key.type === "MiniSpaceKey") {
       return getDefaultSlotPreviewHtml(key.type === "LanguageKey" ? "keys.language" : "keys.space");
     }
@@ -5915,6 +6061,8 @@
     el("layout-key-sub-label").value = key.subLabel || "";
     el("layout-key-weight").value = key.weight == null ? "" : String(key.weight);
     el("layout-key-row-height").value = key.rowHeightPercent == null ? "" : String(key.rowHeightPercent);
+    el("layout-key-icon-slot").value = typeof key.iconSlot === "string" ? key.iconSlot : "";
+    populateKeyIconSlotOptions();
     const numpadSel = el("layout-key-numpad-sym");
     numpadSel.innerHTML = numpadSymOptions
       .map((o) => `<option value="${escapeAttr(o.sym)}">${escapeHtml(o.label)}</option>`)
@@ -6105,6 +6253,7 @@
     const colorSet = colorFields.filter((f) => key[f.customKey] != null || key[f.monetKey] != null).length;
     setStatus("layout-key-color-summary", `颜色覆盖：${colorSet}/${colorFields.length}`, "");
     setStatus("layout-key-compose-summary", `合成中覆盖：${key.composeOverride ? "已设置" : "未设置"}${key.composeOverride?.independentColor ? "，独立按键颜色" : ""}`, "");
+    refreshKeyIconSlotHint();
   }
 
   function updateDraftFromMainFields() {
@@ -6189,6 +6338,43 @@
     if (!inComposeEdit) {
       if (rowHeightRaw) key.rowHeightPercent = rowHeightRaw;
       else delete key.rowHeightPercent;
+    }
+    const iconSlotInput = el("layout-key-icon-slot");
+    const iconSlot = iconSlotInput ? iconSlotInput.value.trim() : "";
+    if (iconSlot) key.iconSlot = iconSlot;
+    else delete key.iconSlot;
+  }
+
+  function populateKeyIconSlotOptions() {
+    const root = el("layout-key-icon-slot-options");
+    if (!root || root.dataset.ready === "1") return;
+    root.innerHTML = iconThemeSlotsAll
+      .map((slot) => `<option value="${escapeAttr(slot)}">${escapeHtml(iconThemeSlotToDisplayName(slot))}</option>`)
+      .join("");
+    root.dataset.ready = "1";
+  }
+
+  function refreshKeyIconSlotHint() {
+    const hint = el("layout-key-icon-slot-hint");
+    if (!hint) return;
+    const key = keyDialogState.draft || {};
+    const explicit = explicitIconSlotOf(key);
+    const auto = automaticIconSlotOf(key);
+    const effective = explicit || auto;
+    const known = explicit ? iconThemeSlotsAll.includes(explicit) : true;
+    const configured = effective ? !!iconThemeValueForSlot(effective) : false;
+    let text;
+    if (explicit && !known) text = `未知槽位 "${explicit}"：App 会按显式值查表，通常不显示图标`;
+    else if (explicit) text = `显式槽位：${explicit}`;
+    else if (auto) text = `留空自动：${auto}`;
+    else text = "该类型没有自动槽位；留空则不显示图标";
+    if (effective && known) text += configured ? " · 当前图标主题已配置" : " · 当前图标主题未配置";
+    hint.textContent = text;
+    hint.className = `status${explicit && !known ? " err" : ""}`;
+    const preview = el("layout-key-icon-slot-preview");
+    if (preview) {
+      const html = keyIconPreviewHtml(key);
+      preview.innerHTML = html || `<span class="icon-slot-hint-empty">无图标，显示文字</span>`;
     }
   }
 
@@ -7655,26 +7841,28 @@
   }
 
   function parseColorValue(raw) {
-    if (!raw) return null;
-    if (/^[0-9a-fA-F]{6}$|^[0-9a-fA-F]{8}$/.test(raw)) {
-      const full = raw.length === 6 ? `FF${raw}` : raw;
-      const unsigned = parseInt(full, 16) >>> 0;
-      return unsigned > 0x7fffffff ? unsigned - 0x100000000 : unsigned;
+    if (raw == null) return null;
+    const text = String(raw).trim();
+    if (!text) return null;
+    const toSigned = (unsigned) => (unsigned > 0x7fffffff ? unsigned - 0x100000000 : unsigned);
+    if (text.startsWith("#")) {
+      const hex = text.slice(1);
+      let full;
+      if (/^[0-9a-fA-F]{3}$/.test(hex)) full = `FF${hex.split("").map((c) => c + c).join("")}`;
+      else if (/^[0-9a-fA-F]{4}$/.test(hex)) full = hex.split("").map((c) => c + c).join("");
+      else if (/^[0-9a-fA-F]{6}$/.test(hex)) full = `FF${hex}`;
+      else if (/^[0-9a-fA-F]{8}$/.test(hex)) full = hex;
+      else throw new Error(`颜色格式无效：${raw}`);
+      return toSigned(parseInt(full, 16) >>> 0);
     }
-    if (raw.startsWith("#")) {
-      const hex = raw.slice(1);
-      if (!/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$|^[0-9a-fA-F]{8}$/.test(hex)) throw new Error(`颜色格式无效：${raw}`);
-      const full = hex.length === 6 ? `FF${hex}` : hex;
-      const unsigned = parseInt(full, 16) >>> 0;
-      return unsigned > 0x7fffffff ? unsigned - 0x100000000 : unsigned;
+    if (/^[0-9a-fA-F]{6}$|^[0-9a-fA-F]{8}$/.test(text)) {
+      const full = text.length === 6 ? `FF${text}` : text;
+      return toSigned(parseInt(full, 16) >>> 0);
     }
-    if (/^0x[0-9a-fA-F]+$/.test(raw)) {
-      const unsigned = parseInt(raw.slice(2), 16) >>> 0;
-      return unsigned > 0x7fffffff ? unsigned - 0x100000000 : unsigned;
-    }
-    const n = Number(raw);
+    if (/^0x[0-9a-fA-F]+$/.test(text)) return toSigned(parseInt(text.slice(2), 16) >>> 0);
+    const n = Number(text);
     if (!Number.isInteger(n)) throw new Error(`颜色必须是整数或 #AARRGGBB：${raw}`);
-    return n;
+    return toSigned(n >>> 0);
   }
 
   function normalizeRowHeightKey(key) {
@@ -10641,33 +10829,61 @@
     const theme = currentIconThemeEntry();
     if (!theme) return;
     const icons = theme.icons || {};
-    const sections = [
-      { title: "键盘按键 (仅支持 SVG)", slots: iconThemeKeySlots },
-      { title: "工具栏按钮 (支持文本/Emoji/SVG/PNG)", slots: iconThemeToolbarSlots },
-      { title: "系统按钮 (支持文本/Emoji/SVG/PNG)", slots: iconThemeSystemSlots }
-    ];
+    const query = String(state.iconThemeSlotFilter || "").trim().toLowerCase();
+    const matches = (slot) => !query
+      || slot.toLowerCase().indexOf(query) >= 0
+      || iconThemeSlotToDisplayName(slot).toLowerCase().indexOf(query) >= 0;
     const editable = isCurrentIconThemeEditable();
     let html = "";
-    sections.forEach((section) => {
-      const customizedCount = section.slots.filter((slot) => icons[slot] && icons[slot].trim()).length;
+    let shown = 0;
+    iconThemeSlotSections.forEach((section) => {
+      const slots = section.slots.filter(matches);
+      if (!slots.length) return;
+      shown += slots.length;
+      const customizedCount = slots.filter((slot) => icons[slot] && icons[slot].trim()).length;
       html += `<div class="icon-slot-section-header">${escapeHtml(section.title)} — ${customizedCount} 个已自定义</div>`;
-      section.slots.forEach((slot) => {
+      slots.forEach((slot) => {
         const value = icons[slot] || "";
         const hasValue = !!value.trim();
         html += `<div class="icon-slot-row" data-slot="${escapeAttr(slot)}">
           <div class="icon-slot-builtin-icon">${getDefaultSlotPreviewHtml(slot)}</div>
-          <div class="icon-slot-name">${escapeHtml(iconThemeSlotToDisplayName(slot))}</div>
+          <div class="icon-slot-name">${escapeHtml(iconThemeSlotToDisplayName(slot))}<span class="icon-slot-id">${escapeHtml(slot)}</span></div>
           <div class="icon-slot-custom-preview">${renderIconThemeSlotPreviewHtml(slot, value, theme.name)}</div>
           <button type="button" class="icon-slot-edit-btn" data-slot="${escapeAttr(slot)}" ${!editable ? "disabled" : ""}>${hasValue ? "✎" : "+"}</button>
         </div>`;
       });
     });
+    if (!shown) {
+      html = `<div class="list-empty">没有匹配的图标槽位。<button type="button" class="mini-button" data-icon-slot-filter-reset>清除筛选</button></div>`;
+    }
     root.innerHTML = html;
+    const hint = el("icon-theme-slot-count-hint");
+    if (hint) {
+      hint.textContent = query
+        ? `匹配 ${shown} / ${iconThemeSlotsAll.length} 个槽位`
+        : `${iconThemeSlotsAll.length} 个槽位`;
+    }
+    const reset = root.querySelector("[data-icon-slot-filter-reset]");
+    if (reset) reset.addEventListener("click", () => {
+      state.iconThemeSlotFilter = "";
+      const input = el("icon-theme-slot-filter");
+      if (input) input.value = "";
+      renderIconThemeSlots();
+    });
     root.querySelectorAll(".icon-slot-edit-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         const slot = btn.dataset.slot;
         if (slot) showIconSlotDialog(slot);
       });
+    });
+  }
+
+  function bindIconThemeSlotFilter() {
+    const input = el("icon-theme-slot-filter");
+    if (!input) return;
+    input.addEventListener("input", () => {
+      state.iconThemeSlotFilter = input.value || "";
+      renderIconThemeSlots();
     });
   }
 
@@ -10856,8 +11072,13 @@
     }
 
     const supportsText = iconThemeSlotSupportsText(slot);
+    const svgOnly = isIconThemeSvgOnlySlot(slot);
     const emojiRow = el("icon-slot-emoji-row");
     if (emojiRow) emojiRow.hidden = !supportsText;
+    const acceptHint = el("icon-slot-file-hint");
+    if (acceptHint) acceptHint.textContent = svgOnly ? "按键与文本编辑栏图标仅支持 SVG/XML" : "支持 SVG/XML/PNG";
+    const fileButton = el("icon-slot-select-file");
+    if (fileButton) fileButton.textContent = svgOnly ? "选择文件 (SVG/XML)" : "选择文件 (SVG/PNG/XML)";
     const emojiInput = el("icon-slot-emoji");
     if (emojiInput) {
       const isXml = isInlineSvgValue(currentValue) || isInlineXmlDrawableValue(currentValue);
@@ -10879,10 +11100,15 @@
     const slot = iconSlotDialogState.slot;
     if (!slot) return;
     if (!theme.icons) theme.icons = {};
-    if (value == null || value.trim() === "") {
+    const trimmed = value == null ? "" : value.trim();
+    if (isIconThemeSvgOnlySlot(slot) && trimmed && !isInlineSvgValue(trimmed) && !isInlineXmlDrawableValue(trimmed)) {
+      setStatus("icon-slot-status", "该槽位只接受内联 SVG/XML 图标", "err");
+      return;
+    }
+    if (!trimmed) {
       delete theme.icons[slot];
     } else {
-      theme.icons[slot] = value.trim();
+      theme.icons[slot] = trimmed;
     }
     iconSlotDialogState.draftValue = value || "";
     renderIconThemeSlots();
@@ -10899,8 +11125,8 @@
     const isSvg = fileName.endsWith(".svg") || file.type === "image/svg+xml";
     const isImage = file.type.startsWith("image/") && !isSvg;
 
-    if (slot.startsWith("keys.")) {
-      // Keyboard keys only support SVG
+    if (isIconThemeSvgOnlySlot(slot)) {
+      // Keyboard keys and text editor buttons only support inline SVG/XML.
       const reader = new FileReader();
       reader.onload = () => {
         const text = reader.result;
@@ -10909,7 +11135,7 @@
         } else if (typeof text === "string" && text.trim().toLowerCase().includes("<vector")) {
           applyIconSlotChange(text.trim());
         } else {
-          setStatus("icon-slot-status", "键盘按键仅支持 SVG 格式", "err");
+          setStatus("icon-slot-status", "按键与文本编辑栏图标仅支持 SVG 格式", "err");
         }
       };
       reader.onerror = () => setStatus("icon-slot-status", "文件读取失败", "err");
@@ -11743,6 +11969,7 @@
         if (typeof raw.gboardStyle === "boolean") state.themeAppSync.gboardStyle = raw.gboardStyle;
         if (typeof raw.kbToolbar === "boolean") state.previewKbToolbar = raw.kbToolbar;
         if (typeof raw.kbToolbarStatus === "boolean") state.previewKbToolbarStatus = raw.kbToolbarStatus;
+        if (typeof raw.kbToolbarExtra === "string") state.previewKbToolbarExtra = raw.kbToolbarExtra;
       }
     } catch (_) {}
   }
@@ -11755,7 +11982,8 @@
         previewSplit: !!state.previewSplit,
         gboardStyle: !!state.themeAppSync.gboardStyle,
         kbToolbar: !!state.previewKbToolbar,
-        kbToolbarStatus: !!state.previewKbToolbarStatus
+        kbToolbarStatus: !!state.previewKbToolbarStatus,
+        kbToolbarExtra: String(state.previewKbToolbarExtra || "")
       }));
     } catch (_) {}
   }
@@ -11825,6 +12053,16 @@
     return null;
   }
 
+  function toolbarPreviewButtons() {
+    const TB = window.F5aToolbarPreview;
+    if (!TB || !Array.isArray(TB.KAWAII_BUTTONS)) return undefined;
+    const extraId = state.previewKbToolbarExtra;
+    if (!extraId) return undefined;
+    const extra = (TB.ALL_BUTTONS || []).find((button) => button.id === extraId);
+    if (!extra || TB.KAWAII_BUTTONS.some((button) => button.id === extra.id)) return undefined;
+    return TB.KAWAII_BUTTONS.concat([extra]);
+  }
+
   function renderKeyboardToolbarPreviewHtml(previewMetrics, keyboardRenderWidth) {
     const TB = window.F5aToolbarPreview;
     if (!TB || state.previewKbToolbar === false) return "";
@@ -11836,6 +12074,7 @@
       pxPerDp: previewToolbarPxPerDp(previewMetrics, keyboardRenderWidth),
       colors: resolveToolbarPreviewColors(),
       iconFor: toolbarPreviewIconFor,
+      buttons: toolbarPreviewButtons(),
       activeIds: []
     });
     return html ? `<div class="kb-tb-host">${html}</div>` : "";
@@ -11915,6 +12154,21 @@
     }
     const kbToolbarStatusCell = el("pt-kb-toolbar-status-cell");
     if (kbToolbarStatusCell) kbToolbarStatusCell.style.opacity = (!textEditor && state.previewKbToolbar !== false) ? "" : "0.45";
+    const extra = el("pt-kb-toolbar-extra");
+    if (extra) {
+      if (!extra.dataset.ready) {
+        const TB = window.F5aToolbarPreview;
+        const defaults = new Set((TB?.KAWAII_BUTTONS || []).map((button) => button.id));
+        const options = ['<option value="">无</option>'].concat(
+          ((TB?.ALL_BUTTONS || []).filter((button) => !defaults.has(button.id)))
+            .map((button) => `<option value="${escapeAttr(button.id)}">${escapeHtml(button.label)}</option>`)
+        );
+        extra.innerHTML = options.join("");
+        extra.dataset.ready = "1";
+      }
+      extra.value = state.previewKbToolbarExtra || "";
+      extra.disabled = textEditor || state.previewKbToolbar === false;
+    }
   }
 
   function setupPreviewToolbar() {
@@ -11992,6 +12246,11 @@
       state.previewKbToolbarStatus = !!e.target.checked;
       saveLocalSplitPrefs();
       syncPreviewToolbarUi();
+      renderLayoutPreview();
+    });
+    el("pt-kb-toolbar-extra")?.addEventListener("change", (e) => {
+      state.previewKbToolbarExtra = String(e.target.value || "");
+      saveLocalSplitPrefs();
       renderLayoutPreview();
     });
     loadLocalSplitPrefs();

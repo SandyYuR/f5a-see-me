@@ -35,7 +35,7 @@
       saveKeyJsonDialog
     } = deps;
 
-    ["layout-key-type", "layout-key-main", "layout-key-alt", "layout-key-label", "layout-key-sub-label", "layout-key-weight", "layout-key-row-height", "layout-key-numpad-sym", "layout-key-switch-target"].forEach((id) => {
+    ["layout-key-type", "layout-key-main", "layout-key-alt", "layout-key-label", "layout-key-sub-label", "layout-key-weight", "layout-key-row-height", "layout-key-numpad-sym", "layout-key-switch-target", "layout-key-icon-slot"].forEach((id) => {
       el(id).addEventListener("input", () => {
         try {
           updateDraftFromMainFields();
@@ -56,6 +56,11 @@
           }
         });
       }
+    });
+    el("layout-key-icon-slot-auto").addEventListener("click", () => {
+      const input = el("layout-key-icon-slot");
+      input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     el("layout-key-save").addEventListener("click", saveLayoutKeyDialog);
     el("layout-key-delete").addEventListener("click", () => {

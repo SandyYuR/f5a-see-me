@@ -43,6 +43,7 @@
         <label><input type="checkbox" id="pt-split"> 分体键盘</label>
         <label title="预览 App 键盘上方的工具栏（左侧工具栏开关 + 中间按钮组 + 右侧收起键盘）；不修改布局"><input type="checkbox" id="pt-kb-toolbar"> 键盘工具栏</label>
         <label id="pt-kb-toolbar-status-cell" title="预览点工具栏开关后升起的状态区（在 App 内整块替换键盘）"><input type="checkbox" id="pt-kb-toolbar-status"> 状态区</label>
+        <label title="在默认工具栏按钮组末尾追加一个按钮，用于预览 split_keyboard 等非默认槽位；不修改布局"><select id="pt-kb-toolbar-extra"></select> 额外按钮</label>
         </div>
       </details>
       <details class="preview-settings" id="preview-appearance">
@@ -110,6 +111,7 @@
           </div></details>
           <details class="card" open id="inspector-size"><summary>显示与尺寸</summary><div class="inspector-fields">
             <label>显示文本<input id="inspector-display" type="text" autocomplete="off" placeholder="跟随主字符"></label>
+            <label>图标槽位<input id="inspector-icon-slot" type="text" list="layout-key-icon-slot-options" autocomplete="off" placeholder="留空自动"></label>
             <label>宽度权重<input id="inspector-weight" type="number" min="0" max="1" step="any" placeholder="自动"></label>
             <label>行高 %<input id="inspector-row-height" type="number" min="1" max="100" step="any" placeholder="自动"></label>
           </div><p class="inspector-note">留空使用默认值。修改先显示在预览中，点击应用后写入布局。</p></details>
@@ -428,6 +430,10 @@
           </div>
           <div id="icon-theme-list" class="theme-list"></div>
           <div id="icon-theme-editor-status" class="status"></div>
+          <div class="list-toolbar icon-slot-filter-row">
+            <input id="icon-theme-slot-filter" class="mini-input" type="search" placeholder="按槽位名筛图标（如 letter.q、toolbar.）" aria-label="筛选图标槽位">
+            <span id="icon-theme-slot-count-hint" class="list-count"></span>
+          </div>
           <div id="icon-theme-slots" class="icon-theme-slots"></div>
         </details>
 
@@ -607,6 +613,16 @@
           <input id="layout-key-row-height" type="number" step="0.1" min="1" max="100">
         </div>
       </div>
+      <div class="form-row key-basic-icon-slot">
+        <label>图标槽位</label>
+        <div class="inline-field">
+          <input id="layout-key-icon-slot" type="text" list="layout-key-icon-slot-options" placeholder="留空按类型自动推断" autocomplete="off">
+          <button type="button" id="layout-key-icon-slot-auto" class="mini-button" title="清空显式槽位，回退到类型默认">自动</button>
+        </div>
+        <div id="layout-key-icon-slot-hint" class="status"></div>
+        <div id="layout-key-icon-slot-preview" class="icon-slot-inline-preview"></div>
+      </div>
+      <datalist id="layout-key-icon-slot-options"></datalist>
       <div class="stack-actions">
         <button type="button" id="layout-key-open-display-text">显示文本…</button>
         <button type="button" id="layout-key-open-labels">标签…</button>
@@ -931,6 +947,7 @@
         <input id="icon-slot-file-input" type="file" accept="image/*,.svg,.xml,text/xml,application/xml" hidden>
         <button id="icon-slot-clear" class="danger" type="button">清除</button>
       </div>
+      <div id="icon-slot-file-hint" class="status"></div>
       <div id="icon-slot-pasted-svg" class="form-row" hidden>
         <label>粘贴 SVG</label>
         <textarea id="icon-slot-svg-textarea" rows="3" placeholder="直接粘贴 SVG 源码..."></textarea>

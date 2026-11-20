@@ -73,6 +73,37 @@
     { id: 'input_method_options', label: '输入法设置', slot: 'toolbar.input_method_options', fixed: true }
   ];
 
+  /* IconTheme.kt TOOLBAR_SLOTS 全量（26 个）。默认预览只渲染 App 默认按钮，
+     其余通过「额外按钮」下拉加入，便于检查 toolbar.split_keyboard 等新槽位。 */
+  TB.ALL_BUTTONS = [
+    { id: 'undo', label: '撤销', slot: 'toolbar.undo' },
+    { id: 'redo', label: '重做', slot: 'toolbar.redo' },
+    { id: 'cursor_move', label: '文本编辑', slot: 'toolbar.cursor_move' },
+    { id: 'floating_toggle', label: '浮动键盘', slot: 'toolbar.floating_toggle' },
+    { id: 'split_keyboard', label: '分体键盘', slot: 'toolbar.split_keyboard' },
+    { id: 'clipboard', label: '剪贴板', slot: 'toolbar.clipboard' },
+    { id: 'ai_assistant', label: 'AI 助手', slot: 'toolbar.ai_assistant' },
+    { id: 'js_tools', label: 'JS 工具', slot: 'toolbar.js_tools' },
+    { id: 'more', label: '更多', slot: 'toolbar.more' },
+    { id: 'language_switch', label: '切换语言', slot: 'toolbar.language_switch' },
+    { id: 'language_switch_ascii', label: '切换英文', slot: 'toolbar.language_switch_ascii' },
+    { id: 'theme', label: '主题', slot: 'toolbar.theme' },
+    { id: 'theme_toggle', label: '亮色/暗色主题', slot: 'toolbar.theme_toggle' },
+    { id: 'random_theme', label: '随机主题', slot: 'toolbar.random_theme' },
+    { id: 'icon_theme', label: '图标主题', slot: 'toolbar.icon_theme' },
+    { id: 'input_method_options', label: '输入法设置', slot: 'toolbar.input_method_options' },
+    { id: 'switch_input_method', label: '切换输入法', slot: 'toolbar.switch_input_method' },
+    { id: 'rime_schema_menu', label: '方案菜单', slot: 'toolbar.rime_schema_menu' },
+    { id: 'reload_config', label: '重载配置', slot: 'toolbar.reload_config' },
+    { id: 'virtual_keyboard', label: '虚拟键盘', slot: 'toolbar.virtual_keyboard' },
+    { id: 'one_handed_keyboard', label: '单手键盘', slot: 'toolbar.one_handed_keyboard' },
+    { id: 'browse_user_data', label: '浏览用户数据', slot: 'toolbar.browse_user_data' },
+    { id: 'settings_global', label: '全局设置', slot: 'toolbar.settings_global' },
+    { id: 'settings_ime', label: '输入法设置', slot: 'toolbar.settings_ime' },
+    { id: 'edit_layout', label: '编辑布局', slot: 'toolbar.edit_layout' },
+    { id: 'edit_fontset', label: '编辑字体', slot: 'toolbar.edit_fontset' }
+  ];
+
   /* IconTheme.kt:102-107 SYSTEM_SLOTS；IdleUi.kt:272 把 toolbar_toggle 映射到
      system.toolbar_toggle。默认图标照 ButtonsCustomizerActivity.kt:1264/1270 与
      KeyboardPreviewUi.kt:653-670：menu = more_horiz（三个横点）、hide = arrow_drop_down。 */
@@ -354,13 +385,14 @@
     if (!o.show) return '';
     var m = metrics(o.pxPerDp, o.heightPx);
     var ctx = buildCtx(o, m);
+    var buttons = Array.isArray(o.buttons) && o.buttons.length ? o.buttons : TB.KAWAII_BUTTONS;
     var barBg = o.keyBorder ? 'transparent' : esc(ctx.colors.bar);
     var row = '<div class="kb-tb-row" style="display:flex;align-items:center;justify-content:space-between;' +
       'gap:' + m.gap + 'px;height:' + m.height + 'px;padding:0 ' + m.margin + 'px;box-sizing:border-box;">' +
       edgeButtonHtml(TB.SYSTEM_BUTTONS.toggle, ctx) +
       '<div class="kb-tb-group" style="display:flex;align-items:center;justify-content:space-around;gap:' +
       m.gap + 'px;flex:1 1 auto;min-width:0;height:100%;">' +
-      TB.KAWAII_BUTTONS.map(function (b) { return mainButtonHtml(b, ctx); }).join('') +
+      buttons.map(function (b) { return mainButtonHtml(b, ctx); }).join('') +
       '</div>' +
       edgeButtonHtml(TB.SYSTEM_BUTTONS.hide, ctx) +
       '</div>';
@@ -375,7 +407,8 @@
     var o = opts || {};
     var m = metrics(o.pxPerDp, o.heightPx);
     var ctx = buildCtx(o, m);
-    var cells = TB.STATUS_BUTTONS.map(function (b) { return statusCellHtml(b, ctx); }).join('');
+    var statusButtons = Array.isArray(o.statusButtons) && o.statusButtons.length ? o.statusButtons : TB.STATUS_BUTTONS;
+    var cells = statusButtons.map(function (b) { return statusCellHtml(b, ctx); }).join('');
     var bg = o.keyBorder ? 'transparent' : esc(ctx.colors.statusBg || ctx.colors.bar);
     TB.lastMetrics = m;
     return '<div class="kb-tb-status" style="display:grid;grid-template-columns:repeat(' + TB.STATUS_COLUMNS +

@@ -2543,6 +2543,75 @@ input[type="checkbox"] {
   font-size: 18px;
 }
 
+.icon-slot-id {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  font-family: var(--mono, monospace);
+  word-break: break-all;
+}
+
+.inline-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.icon-slot-inline-preview {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  margin-top: 6px;
+}
+
+.icon-slot-inline-preview svg,
+.icon-slot-inline-preview img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.icon-slot-hint-empty {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+  line-height: 1.2;
+  padding: 0 4px;
+}
+
+.layout-key-icon-mask {
+  display: inline-block;
+  background-color: currentColor;
+  -webkit-mask-image: var(--icon-src);
+  mask-image: var(--icon-src);
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.layout-key-icon-text {
+  font-size: 0.9em;
+  line-height: 1;
+}
+
+.icon-slot-filter-row {
+  margin-top: 8px;
+}
+
 .icon-slot-name {
   flex: 1 1 auto;
   font-size: 13px;

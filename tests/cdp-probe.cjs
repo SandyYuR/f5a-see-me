@@ -187,7 +187,7 @@ async function interactFn() {
       const pressed = appChip.getAttribute('aria-pressed');
       if (pressed !== 'true') out.problems.push('点「输入法内置」后 aria-pressed 未置 true');
       log('主题列表(输入法内置)', { cards: n, ariaPressed: pressed, hint: (document.getElementById('theme-count-hint') || {}).textContent || null });
-      if (n !== 12) out.problems.push('输入法内置筛选应为 12 个,实测 ' + n);
+      if (n !== 14) out.problems.push('输入法内置筛选应为 14 个,实测 ' + n);
     }
 
     const input = document.getElementById('theme-filter');

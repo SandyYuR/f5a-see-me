@@ -259,6 +259,11 @@ function loadApp(opts = {}) {
       serializePopupEntries, currentIconThemeEntry,
       getRows, setRows, themeColorTokens, isCurrentIconThemeEditable,
       normalizeLayoutObject, resolveThemeTokenColor, toArgbHex, deepClone,
+      // 按键图标槽位
+      iconThemeSlotsAll, iconThemeSlotSections, iconThemeSlotToDisplayName,
+      iconThemeSlotSupportsText, isIconThemeSvgOnlySlot,
+      explicitIconSlotOf, automaticIconSlotOf, effectiveIconSlotOf, keyIconPreviewHtml,
+      parseColorValue,
       // 行为级功能项
       saveDraftNow, currentHistorySnapshot, crc32,
       bytesToBase64Url, base64UrlToBytes,
@@ -273,7 +278,7 @@ function loadApp(opts = {}) {
   if (!source.includes(marker)) throw new Error('app.js 入口 main(); 未找到，装载器需同步更新');
   // app.js 读 globalThis.F5A_BUILTIN_PRESETS / F5A_SYMBOL_DATA(app 内置预置),
   // 生产页面靠 index.html 里的 <script> 先加载;测试里按同样顺序先执行这两份。
-  for (const file of ['builtin-presets.js', 'symbol-data.js', 'symbol-panel.js', 'symbol-preview.js', 'random-theme.js']) {
+  for (const file of ['builtin-presets.js', 'symbol-data.js', 'symbol-panel.js', 'symbol-preview.js', 'random-theme.js', 'toolbar-preview.js']) {
     vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'js', file), 'utf8'), context, { filename: file });
   }
   vm.runInNewContext(source.replace(marker, hook), context, { filename: 'app.js' });

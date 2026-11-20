@@ -11,7 +11,8 @@
     const form = el("inspector-form");
     const inspector = el("key-inspector");
     const fields = { main: "inspector-main", alt: "inspector-alt", label: "inspector-label",
-      displayText: "inspector-display", weight: "inspector-weight", rowHeightPercent: "inspector-row-height" };
+      displayText: "inspector-display", iconSlot: "inspector-icon-slot",
+      weight: "inspector-weight", rowHeightPercent: "inspector-row-height" };
     let session = null;
     let drafts = {};
     let leaving = null;

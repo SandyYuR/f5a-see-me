@@ -290,6 +290,36 @@
     }
   },
   {
+    "name": "普蓝",
+    "isDark": false,
+    "backgroundImage": "",
+    "version": "2.1",
+    "colors": {
+      "accentKeyBackgroundColor": -16303209,
+      "accentKeyTextColor": -1,
+      "altKeyBackgroundColor": -3420459,
+      "altKeyTextColor": -11777200,
+      "backgroundColor": -1447186,
+      "barColor": -1118482,
+      "candidateCommentColor": -9539986,
+      "candidateLabelColor": -9539986,
+      "candidateTextColor": -15131102,
+      "clipboardEntryColor": -1,
+      "dividerColor": 520093696,
+      "genericActiveBackgroundColor": -16303209,
+      "genericActiveForegroundColor": -1,
+      "keyBackgroundColor": -1,
+      "keyPressHighlightColor": 520093696,
+      "keyShadowColor": -7763315,
+      "keyTextColor": -15592166,
+      "keyboardColor": -328966,
+      "popupBackgroundColor": -1118482,
+      "popupTextColor": -14606047,
+      "spaceBarColor": -1,
+      "waterRippleColor": -16303209
+    }
+  },
+  {
     "name": "森林集·write",
     "isDark": false,
     "backgroundImage": "",
@@ -316,6 +346,36 @@
       "popupBackgroundColor": -930363,
       "popupTextColor": -567465,
       "spaceBarColor": -1250068
+    }
+  },
+  {
+    "name": "水彩",
+    "isDark": false,
+    "backgroundImage": "",
+    "version": "2.1",
+    "colors": {
+      "accentKeyBackgroundColor": -16303209,
+      "accentKeyTextColor": -1,
+      "altKeyBackgroundColor": -3420459,
+      "altKeyTextColor": -11777200,
+      "backgroundColor": -526347,
+      "barColor": -1118482,
+      "candidateCommentColor": -9539986,
+      "candidateLabelColor": -9539986,
+      "candidateTextColor": -15131102,
+      "clipboardEntryColor": -526347,
+      "dividerColor": 419430400,
+      "genericActiveBackgroundColor": -12417548,
+      "genericActiveForegroundColor": -1,
+      "keyBackgroundColor": -1,
+      "keyPressHighlightColor": 520093696,
+      "keyShadowColor": 419430400,
+      "keyTextColor": -15592166,
+      "keyboardColor": -328966,
+      "popupBackgroundColor": -1118482,
+      "popupTextColor": -14606047,
+      "spaceBarColor": -1,
+      "waterRippleColor": -12417548
     }
   },
   {

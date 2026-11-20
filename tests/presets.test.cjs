@@ -24,31 +24,31 @@ test('预置生成物与 app 内置资源逐字段一致(gen-presets --verify)',
   });
   const summary = JSON.parse(out);
   assert.deepEqual(summary.diffs, [], '生成物与源存在差异');
-  assert.equal(summary.themes, 12);
-  assert.equal(summary.iconThemes, 3);
+  assert.equal(summary.themes, 14);
+  assert.equal(summary.iconThemes, 5);
   assert.equal(summary.themeTokens, 21);
 });
 
-test('运行时主题目录 = 9 个本地预设 + 12 个 app 内置', () => {
+test('运行时主题目录 = 9 个本地预设 + 14 个 app 内置', () => {
   const { api } = loadApp();
   const catalog = api.state.themeCatalog;
-  assert.equal(catalog.length, 21, `主题目录应为 21 项,实际 ${catalog.length}`);
+  assert.equal(catalog.length, 23, `主题目录应为 23 项,实际 ${catalog.length}`);
   const appItems = catalog.filter((t) => t.id.startsWith('app-'));
-  assert.equal(appItems.length, 12, 'app 内置主题应为 12 项');
+  assert.equal(appItems.length, 14, 'app 内置主题应为 14 项');
   appItems.forEach((t) => assert.equal(t.builtin, true, `${t.name} 应为内置(不可编辑)`));
   // 本地预设未被替换,仍全部在册
   ['MaterialLight', 'MaterialDark', 'PixelLight', 'PixelDark', 'NordLight', 'NordDark', 'DeepBlue', 'Monokai', 'AMOLEDBlack']
     .forEach((name) => assert.ok(catalog.some((t) => t.name === name), `本地预设 ${name} 丢失`));
 });
 
-test('运行时图标主题目录 = 1 个空壳 + 3 个 app 内置', () => {
+test('运行时图标主题目录 = 1 个空壳 + 5 个 app 内置', () => {
   const { api } = loadApp();
   const catalog = api.state.iconThemeCatalog;
-  assert.equal(catalog.length, 4, `图标主题目录应为 4 项,实际 ${catalog.length}`);
+  assert.equal(catalog.length, 6, `图标主题目录应为 6 项,实际 ${catalog.length}`);
   const appItems = catalog.filter((t) => t.id.startsWith('app-icon-'));
-  assert.equal(appItems.length, 3);
+  assert.equal(appItems.length, 5);
   // vm 沙箱里造出来的数组与本地数组不同 realm,deepEqual 会假失败,故按 JSON 比
-  assert.equal(JSON.stringify(appItems.map((t) => t.name)), JSON.stringify(['无题', '谷歌', '长日将烬']));
+  assert.equal(JSON.stringify(appItems.map((t) => t.name)), JSON.stringify(['无题', '普蓝', '水彩', '谷歌', '长日将烬']));
   appItems.forEach((t) => {
     assert.ok(Object.keys(t.icons).length > 0, `${t.name} 应带图标字典`);
     assert.ok(typeof t.thumbnailSvg === 'string' && t.thumbnailSvg.length > 0, `${t.name} 应带缩略图 SVG`);
@@ -74,12 +74,13 @@ test('app 内置主题的 21 个 token 色值与源 JSON 全等', () => {
   const { api } = loadApp();
   const catalog = api.state.themeCatalog.filter((t) => t.id.startsWith('app-'));
   const source = read('data/theme-presets.json');
-  assert.equal(source.length, 12);
+  assert.equal(source.length, 14);
   source.forEach((src) => {
     const got = catalog.find((t) => t.name === src.name);
     assert.ok(got, `运行时缺少主题 ${src.name}`);
+    // f5a 的主题模型只覆盖 App 的 21 个 token；水彩/普蓝多出的 waterRippleColor 只影响涟漪，不参与预览。
     const gotKeys = Object.keys(got.colors).filter((k) => k !== 'waterRippleColor').sort();
-    const srcKeys = Object.keys(src.colors).sort();
+    const srcKeys = Object.keys(src.colors).filter((k) => k !== 'waterRippleColor').sort();
     assert.deepEqual(gotKeys, srcKeys, `${src.name} token 键集不一致`);
     srcKeys.forEach((k) => {
       assert.equal(got.colors[k], src.colors[k], `${src.name}.${k} 色值不一致`);
