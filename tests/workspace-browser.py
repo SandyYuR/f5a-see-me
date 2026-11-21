@@ -420,6 +420,11 @@ try:
         print('PASS desktop/mobile geometry, touch, and zero page errors')
         parity = context.new_page()
         parity.goto(url, wait_until='domcontentloaded')
+        # The parity helpers dispatch events directly, so wait for async startup
+        # and draft restoration to finish before importing their first fixture.
+        expect(parity.locator('#theme-qr-meta')).to_have_text('点击“分享当前激活主题”可自动导出 ZIP 或二维码长图')
+        expect(parity.locator('#layout-json')).not_to_be_empty()
+        expect(key(parity)).to_be_visible()
         parity.add_script_tag(path=str(ROOT / 'tests/browser-parity.js'))
         result = parity.evaluate('async () => await F5aBrowserParity.runCore()')
         assert len(result['pass']) == 6 and not result['errors'], result
