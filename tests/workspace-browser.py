@@ -391,7 +391,8 @@ try:
         key(mp).tap()
         expect(mp.locator('#inspector-form')).to_be_visible()
         mp.locator('#inspector-main').fill('M')
-        expect(mp.locator('#inspector-key-face')).to_contain_text('M')
+        expect(mp.locator('#inspector-main')).to_have_value('M')
+        expect(mp.locator('#inspector-key-face')).to_have_text('m')
         assert layout(mp)['default'][0][0]['main'] == 'Q'
         mp.locator('#inspector-apply').tap()
         assert layout(mp)['default'][0][0]['main'] == 'M'
