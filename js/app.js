@@ -57,6 +57,16 @@
   const LONG_IMAGE_PREVIEW_KEYBOARD_MAX_WIDTH = 576;
   const LIVE_PREVIEW_KEYBOARD_MAX_WIDTH = 576;
   const LIVE_PREVIEW_SPLIT_MAX_WIDTH = 1228;
+  // 未量测到输入法屏幕参数时的名义设备（1080x2280 / 2.75 / IME 30% / Kawaii Bar 40dp）。
+  // 以前这里返回 null，预览按 360dp 宽与 20/9 比例自行推算，工具栏与按键的比例都偏了。
+  const NOMINAL_PREVIEW_DEVICE = Object.freeze({
+    screenWidthPx: 1080,
+    screenHeightPx: 2280,
+    density: 2.75,
+    keyboardHeightPercent: 30,
+    keyboardHeightPercentLandscape: 49,
+    kawaiiBarHeightPx: 110
+  });
   let layoutWorkspace = null;
   let layoutJsonDraft = null;
   let layoutJsonTextareaBound = false;
@@ -640,6 +650,7 @@
     editingSplit: false,
      previewSplit: false,
      previewComposing: false,
+  previewShift: false,
     // 键盘顶部工具栏预览（对照 app fx-rime-only 的 KawaiiBar）。默认显示；
     // 状态区是 toolbar_toggle 升起的独立窗口，默认关闭。
     previewKbToolbar: true,
@@ -720,9 +731,10 @@
       borderEnabled: true,
       borderOutline: false,
       gboardStyle: false,
-      keyHGap: 3,
-      keyVGap: 4,
-      keyRadius: 6,
+      // 与 ThemePrefs 竖屏默认一致：水平边距 2dp、垂直边距 3dp、圆角 12dp。
+      keyHGap: 2,
+      keyVGap: 3,
+      keyRadius: 12,
       punctPos: 'bottom',
       // 分体键盘预览参数（中缝宽度对应 app 的 split_keyboard_gap_percent；
       // 对齐开关对应 split_keyboard_align_halves，默认开）。variant 布局本体走布局 JSON。
@@ -955,13 +967,15 @@
   }
 
   function resolveKeyColorValue(key, customKey, monetKey, fallbackColor) {
-    const custom = normalizeColorValue(key?.[customKey]);
-    if (custom != null) return custom;
+    // 与 LayoutKeyColorResolver.resolve 同序：theme: 引用 → 颜色资源名（预览没有 Monet
+    // 解析通道，跳过）→ 布局里写的静态色 → 调用方给的默认色。
     const monetRef = typeof key?.[monetKey] === "string" ? key[monetKey].trim() : "";
     if (monetRef.startsWith("theme:")) {
       const token = monetRef.slice("theme:".length);
       if (themeColorTokens.includes(token)) return resolveThemeTokenColor(token);
     }
+    const custom = normalizeColorValue(key?.[customKey]);
+    if (custom != null) return custom;
     return fallbackColor;
   }
 
@@ -3901,10 +3915,24 @@
     if (!subs.includes(state.selectedSubmode)) state.selectedSubmode = subs[0] || DEFAULT_SUBMODE;
   }
 
+  // TextKeyboard.updateAlphabetKeys 在 CapsState.None 时把单字母 AlphabetKey 强制小写，
+  // 按住 Shift（CapsState.Once）才显示大写；MacroKey 的显式 displayText 不参与这个归一化。
+  function previewLetterCase(text) {
+    const value = typeof text === "string" ? text : "";
+    if (!/^[A-Za-z]$/.test(value)) return value;
+    return state.previewShift ? value.toUpperCase() : value.toLowerCase();
+  }
+
   function previewTitleFromObj(key) {
     if (!key || typeof key !== "object") return "?";
     if (key.type === "AlphabetKey" || key.type === "MacroKey") {
-      if (typeof key.displayText === "string" && key.displayText) return key.displayText;
+      if (typeof key.displayText === "string" && key.displayText) {
+        // 显式 displayText 不参与 CapsState.None 的小写归一化（KeyDef.keepDisplayTextCase），
+        // 但 App 在 Shift 单次态仍会把单字母改写成大写。
+        return state.previewShift && /^[A-Za-z]$/.test(key.displayText)
+          ? key.displayText.toUpperCase()
+          : key.displayText;
+      }
       if (key.displayText && typeof key.displayText === "object") {
         return key.displayText[state.selectedSubmode] || key.displayText.default || Object.values(key.displayText)[0] || "?";
       }
@@ -3917,19 +3945,21 @@
       case "CommaKey": return ",";
       case "LanguageKey": return "🌐";
       case "SpaceKey": {
-        // 优先显示 ime:submode 或 ime
-        const base = state.selectedBase || "ime";
-        const submode = state.selectedSubmode || "";
-        if (submode && submode !== DEFAULT_SUBMODE && state.layout[base] && state.layout[base][submode]) return `${base}(${submode})`;
-        return base;
+        // 实机写的是输入法方案名（TextKeyboard.updateSpaceKeyLabel），网页拿不到运行时方案名：
+        // 有布局自定义标签就用它，否则给一个中性占位，绝不把内部 base 名（default 之类）画上去。
+        if (typeof key.label === "string" && key.label.trim()) return key.label;
+        if (typeof key.main === "string" && key.main.trim()) return key.main;
+        return "空格";
       }
       case "SymbolKey": return key.label || ".";
       case "ReturnKey": return "↵";
       case "BackspaceKey": return "⌫";
       case "NumPadKey": return key.label || "0";
       case "MiniSpaceKey": return "␣";
-      case "AlphabetKey": return key.main || "?";
-      case "MacroKey": return key.label || "M";
+      case "AlphabetKey": return previewLetterCase(key.main || "?");
+      // MacroKey 的 label 是默认显示文本，App 只在显式 displayText 时保留原样；
+      // 未显式设置时和 AlphabetKey 一样受 Shift/Caps 归一化（见 TextKeyboard.updateAlphabetKeys）。
+      case "MacroKey": return previewLetterCase(key.label || "M");
       default:
         return editorKeyLabel(key);
     }
@@ -4302,7 +4332,7 @@
         if (!ref || typeof ref !== "object" || ref.fcitx == null) return null;
         return String(ref.fcitx).toLowerCase() === visible.toLowerCase() ? slot : null;
       }
-      case "CapsKey": return "keys.capslock.none";
+      case "CapsKey": return state.previewShift ? "keys.capslock.once" : "keys.capslock.none";
       case "BackspaceKey": return "keys.backspace";
       case "ReturnKey": return "keys.return.default";
       case "LanguageKey": return "keys.language";
@@ -4411,26 +4441,39 @@
     ].map((key) => ({ key }))] };
   }
 
-  function resolveTextEditorPreviewGeometry(width, metrics = state.themeAppSync.previewMetrics) {
-    const screenWidth = Number(metrics?.screenWidthPx);
-    const keyboardHeight = Number(metrics?.keyboardHeightPx);
-    const measured = Number.isFinite(screenWidth) && screenWidth > 0 && Number.isFinite(keyboardHeight) && keyboardHeight > 0;
-    const logicalWidth = measured ? screenWidth / Math.max(0.1, Number(metrics.density) || 1) : 360;
-    const dpScale = width / logicalWidth;
-    const height = measured
-      ? width * keyboardHeight / screenWidth
+  /* 文本编辑窗与主键盘共用同一个度量：同样高的 IME 窗口，顶部 40dp 标题栏
+   * （KawaiiBar/TitleUi）+ 底部 50dp 编辑栏（FoxyTextEditingUi.keyHeight），
+   * 中间是光标触控板。之前这里另算一套 360dp/20:9 的比例，切页签时框高会跳。 */
+  function resolveTextEditorPreviewGeometry(width, previewMetrics = resolvePreviewMetrics(false)) {
+    const metrics = previewMetrics || resolvePreviewMetrics(false);
+    const dpScale = width / Math.max(1, Number(metrics?.maxWidth) || width);
+    const totalHeight = Number(metrics?.targetHeight) > 0
+      ? Number(metrics.targetHeight) * dpScale
       : width * (20 / 9) * 0.3;
-    return { dpScale, height: Math.max(120 * dpScale, height), bottomHeight: 46 * dpScale };
+    const titleHeight = (Number(metrics?.topBarHeight) || 40) * dpScale;
+    const bottomHeight = 50 * dpScale;
+    return {
+      dpScale,
+      height: Math.max(titleHeight + bottomHeight + 120 * dpScale, totalHeight),
+      bottomHeight,
+      titleHeight
+    };
   }
 
   function textEditorPreviewButtonColors(key, borderEnabled) {
-    // FoxyTextEditingUi 使用主题按钮；KeyDef 的逐键配色和合成覆盖不作用于这个容器。
+    // FoxyTextEditingUi.createConfiguredButton 先解析按键自己的 backgroundColor/shadowColor/
+    // textColorMonet，再交给 TextEditingButton；缺省才回落到 key/altKey 主题色。
+    const bg = resolveKeyColorValue(key, "backgroundColor", "backgroundColorMonet", null);
+    const shadow = resolveKeyColorValue(key, "shadowColor", "shadowColorMonet", null);
+    const text = resolveKeyColorValue(key, "textColor", "textColorMonet", null);
     const alt = keyVariantClass(key).includes("alt-key") || key.type === "MiniSpaceKey";
     return {
-      backgroundCss: borderEnabled ? argbToCss(resolveThemeTokenColor(alt ? "altKeyBackgroundColor" : "keyBackgroundColor")) : "transparent",
-      textCss: argbToCss(resolveThemeTokenColor(PREVIEW_SPECIAL_KEY_ICONS[key.type] || alt ? "altKeyTextColor" : "keyTextColor")),
+      backgroundCss: borderEnabled
+        ? (bg != null ? argbToCss(bg) : argbToCss(resolveThemeTokenColor(alt ? "altKeyBackgroundColor" : "keyBackgroundColor")))
+        : "transparent",
+      textCss: argbToCss(text != null ? text : resolveThemeTokenColor(alt ? "altKeyTextColor" : "keyTextColor")),
       borderCss: argbToCss(resolveThemeTokenColor("dividerColor")),
-      shadowCss: argbToCss(resolveThemeTokenColor("keyShadowColor"))
+      shadowCss: argbToCss(shadow != null ? shadow : resolveThemeTokenColor("keyShadowColor"))
     };
   }
 
@@ -4442,9 +4485,32 @@
     }
     if (key.type === "SpaceKey") return "";
     if (key.type === "PlaceholderKey") return escapeHtml(key.main || "");
-    if (key.type === "MacroKey" && !key.displayText) return escapeHtml(key.label || "");
-    if (key.type === "AlphabetKey" && !key.displayText) return escapeHtml(key.main || "");
+    if (key.type === "MacroKey" && !key.displayText) return escapeHtml(previewLetterCase(key.label || ""));
+    if (key.type === "AlphabetKey" && !key.displayText) return escapeHtml(previewLetterCase(key.main || ""));
     return previewKeyFaceHtml(key);
+  }
+
+  // TextEditingWindow 顶上是 KawaiiBar：返回键 + 标题 + undo/redo/clipboard 三枚 40dp 按钮，
+  // 底色 barColor、图标走主题槽（toolbar.undo/redo/clipboard、system.back）。
+  function textEditorTitleIconHtml(slot, sizePx, colorCss) {
+    const icon = toolbarPreviewIconFor({ slot });
+    if (!icon) return "";
+    if (icon.kind === "text") {
+      return `<span class="te-btn-glyph" style="font-size:${sizePx * 0.62}px;color:${colorCss}">${escapeHtml(icon.value)}</span>`;
+    }
+    const TB = window.F5aToolbarPreview;
+    if (icon.kind === "svg" && TB && TB.svgDataUrl) {
+      const url = TB.svgDataUrl(icon.value);
+      if (!url) return "";
+      if (TB.iconTintable(icon.value)) {
+        return `<span class="te-btn-icon" style="width:${sizePx}px;height:${sizePx}px;background-color:${colorCss};-webkit-mask-image:url('${url}');mask-image:url('${url}')"></span>`;
+      }
+      return `<img class="te-btn-icon" src="${escapeAttr(url)}" alt="" style="width:${sizePx}px;height:${sizePx}px">`;
+    }
+    if (icon.kind === "url") {
+      return `<img class="te-btn-icon" src="${escapeAttr(icon.value)}" alt="" style="width:${sizePx}px;height:${sizePx}px">`;
+    }
+    return "";
   }
 
   function buildTextEditorPreviewHtml(rows, geometry, borderEnabled) {
@@ -4465,7 +4531,13 @@
         return `<div class="text-editor-key-slot" style="width:${weights[index] / total * 100}%;padding:${inset}px"><div class="layout-key text-editor-key"${attr} role="button" tabindex="${data.fallback ? -1 : 0}" title="${escapeAttr(data.fallback ? "App 默认编辑按钮（仅预览）" : `${keyTypeLabel(key.type)}。点击编辑`)}" style="--preview-key-bg:${colors.backgroundCss};color:${colors.textCss};border-color:${colors.borderCss};border-width:${borderEnabled ? 0 : Math.max(1, scale / 2)}px;border-radius:${12 * scale}px;box-shadow:${borderEnabled ? `0 ${scale}px 0 ${colors.shadowCss}` : "none"};font-size:${14 * scale}px;opacity:${data.fallback && index === 2 ? 0.45 : 1}"><span class="text-editor-key-label">${face}</span></div></div>`;
       }).join("")}</div>`;
     }).join("");
-    return `<div class="text-editor-preview-frame" style="height:${geometry.height}px;--text-editor-icon-size:${24 * scale}px"><div class="text-editor-pad-area" role="img" aria-label="文本编辑光标触控区：滑动可移动光标；长按后滑动可选择文字"><div class="text-editor-pad" style="margin:${8 * scale}px;border-radius:${6 * scale}px;background:${padColor}"><svg class="text-editor-pad-prompts" aria-hidden="true"><text x="50%" y="50%" dy="${-6 * scale}" fill="${alphaText(165)}" font-size="${15 * scale}">滑动可移动光标</text><text x="50%" y="50%" dy="${18 * scale}" fill="${alphaText(110)}" font-size="${12 * scale}">长按后滑动可选择文字</text></svg></div></div><div class="text-editor-bottom" style="height:${geometry.bottomHeight}px">${bottom}</div></div>`;
+    const barColor = argbToCss(resolveThemeTokenColor("barColor"));
+    const titleColor = argbToCss(resolveThemeTokenColor("altKeyTextColor"));
+    const titleSize = 16 * scale;
+    const titleButton = 40 * scale;
+    const titleIcon = 24 * scale;
+    const titleBar = `<div class="text-editor-titlebar" style="height:${geometry.titleHeight}px;background:${barColor};color:${titleColor}"><button class="te-btn" type="button" aria-label="返回" style="width:${titleButton}px;height:${titleButton}px">${textEditorTitleIconHtml("system.back", titleIcon, titleColor)}</button><span class="te-title" style="font-size:${titleSize}px;color:${titleColor}">文本编辑</span><span class="te-actions">${["toolbar.undo", "toolbar.redo", "toolbar.clipboard"].map((slot) => `<button class="te-btn" type="button" aria-label="${slot}" style="width:${titleButton}px;height:${titleButton}px">${textEditorTitleIconHtml(slot, titleIcon, titleColor)}</button>`).join("")}</span></div>`;
+    return `<div class="text-editor-preview-frame" style="height:${geometry.height}px;--text-editor-icon-size:${24 * scale}px">${titleBar}<div class="text-editor-pad-area" role="img" aria-label="文本编辑光标触控区：滑动可移动光标；长按后滑动可选择文字"><div class="text-editor-pad" style="margin:${8 * scale}px;border-radius:${6 * scale}px;background:${padColor}"><svg class="text-editor-pad-prompts" aria-hidden="true"><text x="50%" y="50%" dy="${-6 * scale}" fill="${alphaText(165)}" font-size="${15 * scale}">滑动可移动光标</text><text x="50%" y="50%" dy="${18 * scale}" fill="${alphaText(110)}" font-size="${12 * scale}">长按后滑动可选择文字</text></svg></div></div><div class="text-editor-bottom" style="height:${geometry.bottomHeight}px">${bottom}</div></div>`;
   }
 
   function renderTextEditorPreview(root) {
@@ -4473,7 +4545,7 @@
     const width = resolvePreviewKeyboardWidth(root, metrics, false);
     const sourceRows = getRowsDockedRows(TEXT_EDITOR_LAYOUT_NAME, DEFAULT_SUBMODE);
     const rows = layoutWorkspace?.previewRows(sourceRows) || sourceRows;
-    const geometry = resolveTextEditorPreviewGeometry(width);
+    const geometry = resolveTextEditorPreviewGeometry(width, metrics);
     const fallback = resolveTextEditorPreviewRows(rows).fallback;
     applyPreviewThemeSurface();
     root.style.setProperty("--preview-keyboard-max-width", `${width}px`);
@@ -5036,11 +5108,20 @@
     };
   }
 
+  /* 预览几何的唯一真源：输入法量测值；没有量测时用同一机型的名义参数。
+   *
+   * 关键点：maxWidth 是设备的**逻辑宽度（dp）**，不是预览显示宽度。预览画布宽
+   * （--preview-keyboard-max-width）另由 resolvePreviewKeyboardWidth 给，两者之比就是
+   * 本预览的 px/dp；工具栏 40dp、底栏 50dp、圆角 12dp 等常量都乘这个比例。
+   * 曾经没有量测时直接返回 null，调用方退回「360dp 宽 + 20/9 名义高」，
+   * 于是工具栏按 40 CSS px（≈25dp）绘制、键盘行却按 30% 的另一套比例撑高，
+   * 同一块预览里出现两种密度，和实机必然对不上。 */
   function resolvePreviewMetrics(landscape = false) {
-    const metrics = state.themeAppSync?.previewMetrics;
-    if (!metrics || !Number.isFinite(Number(metrics.screenWidthPx)) || !Number.isFinite(Number(metrics.keyboardHeightPx))) {
-      return null;
-    }
+    const measured = state.themeAppSync?.previewMetrics;
+    const metrics = measured && Number.isFinite(Number(measured.screenWidthPx))
+      && Number.isFinite(Number(measured.screenHeightPx))
+      ? measured
+      : NOMINAL_PREVIEW_DEVICE;
     const rawWidth = Math.max(1, Number(metrics.screenWidthPx));
     const rawHeight = Math.max(1, Number(metrics.screenHeightPx));
     const screenWidthPx = landscape ? Math.max(rawWidth, rawHeight) : rawWidth;
@@ -5051,15 +5132,16 @@
       : Number(metrics.keyboardHeightPercent) || 0;
     const keyboardHeightPx = landscape
       ? Math.max(1, screenHeightPx * keyboardHeightPercent / 100)
-      : Math.max(1, Number(metrics.keyboardHeightPx));
-    const widthCap = landscape ? LIVE_PREVIEW_SPLIT_MAX_WIDTH : LIVE_PREVIEW_KEYBOARD_MAX_WIDTH;
-    const maxWidth = Math.min(widthCap, Math.max(320, screenWidthPx / density));
-    // Keep the keyboard window ratio from Android; split preview uses landscape dimensions.
+      : Math.max(1, Number(metrics.keyboardHeightPx) || screenHeightPx * keyboardHeightPercent / 100);
+    // 逻辑宽度即设备 dp 宽；横向时取长边。
+    const maxWidth = Math.max(320, screenWidthPx / density);
+    // 键盘窗口在 Android 侧的高度（含 Kawaii Bar），换算到 dp。
     const targetHeight = Math.max(1, maxWidth * keyboardHeightPx / screenWidthPx);
     const sideDp = Math.max(0, Number(metrics.keyboardSidePaddingPx || 0) / density);
     const bottomDp = Math.max(0, Number(metrics.keyboardBottomPaddingPx || 0) / density);
-    // Kawaii bar sits above the keyboard view in the IME; scale to preview dp space.
-    const topBarDp = Math.max(0, Number(metrics.kawaiiBarHeightPx || 0) / density * maxWidth / (screenWidthPx / density));
+    // Kawaii Bar 在 IME 内部占据顶部 40dp；没有量测时按 40dp 兜底。
+    const barPx = Number(metrics.kawaiiBarHeightPx) > 0 ? Number(metrics.kawaiiBarHeightPx) : density * 40;
+    const topBarDp = Math.max(0, barPx / density);
     return {
       maxWidth,
       targetHeight,
@@ -5082,21 +5164,27 @@
     return Math.max(1, containerWidth - horizontalPadding);
   }
 
+  /* 预览画布宽度只决定「放多大」，不代表设备 dp 宽。设备 dp 宽在 metrics.maxWidth，
+   * 两者之比由调用方换算成 px/dp。 */
   function resolvePreviewKeyboardWidth(root, previewMetrics, landscape = false) {
-    const intrinsicWidth = previewMetrics?.maxWidth
-      || (landscape ? LIVE_PREVIEW_SPLIT_MAX_WIDTH : LIVE_PREVIEW_KEYBOARD_MAX_WIDTH);
-    return Math.max(1, Math.min(intrinsicWidth, resolvePreviewAvailableWidth(root, landscape)));
+    const displayWidth = landscape ? LIVE_PREVIEW_SPLIT_MAX_WIDTH : LIVE_PREVIEW_KEYBOARD_MAX_WIDTH;
+    return Math.max(1, Math.min(displayWidth, resolvePreviewAvailableWidth(root, landscape)));
   }
 
+  /* 键盘行可用高度 = IME 总高 - Kawaii Bar - 底部留白。
+   * 之前直接把 IME 总高当成行高总和，预览里的按键比实机高出整整一条工具栏。 */
   function resolvePreviewContentHeight(rows, heightScale = 1, renderWidth = null, previewMetrics = null) {
     const metrics = previewMetrics || resolvePreviewMetrics();
     if (!metrics) return null;
     const rowCount = Math.max(1, rows.length);
     // targetHeight follows the actual rendered width so desktop and mobile keep one aspect ratio.
     const width = Number(renderWidth) > 0 ? Number(renderWidth) : metrics.maxWidth;
-    const targetHeight = width * metrics.targetHeight / metrics.maxWidth;
+    const pxPerDp = width / Math.max(1, metrics.maxWidth);
+    const targetHeight = metrics.targetHeight * pxPerDp;
+    const barHeight = Math.max(0, Number(metrics.topBarHeight) || 0) * pxPerDp;
+    const bottomPadding = Math.max(0, Number(metrics.bottomPadding) || 0) * pxPerDp;
     const scale = Number.isFinite(heightScale) && heightScale > 0 ? heightScale : 1;
-    return Math.max(rowCount * 28, targetHeight * scale);
+    return Math.max(rowCount * 28, (targetHeight - barHeight - bottomPadding) * scale);
   }
 
   // 无 IME 量测时按 Android 的名义设备比例生成预览高度。
@@ -9146,7 +9234,7 @@
     );
     const keyHGap = state.themeAppSync?.keyHGap ?? 3;
     const keyVGap = Math.max(0, Number(state.themeAppSync?.keyVGap ?? 3) || 0);
-    const keyRadius = state.themeAppSync?.keyRadius ?? 4;
+    const keyRadius = state.themeAppSync?.keyRadius ?? 12;
     const borderEnabled = !!state.themeAppSync?.borderEnabled;
     const borderOutline = !!state.themeAppSync?.borderOutline;
     const gboardStyle = !!state.themeAppSync?.gboardStyle;
@@ -9154,8 +9242,10 @@
     const rowPercents = resolveRowHeightPercents(rows);
     const scaleForCanvas = previewMetrics ? keyboardWidth / Math.max(1, previewMetrics.maxWidth) : 1;
     const bottomPadding = previewMetrics ? previewMetrics.bottomPadding * scaleForCanvas : 0;
+    const topBarHeight = previewMetrics ? (Number(previewMetrics.topBarHeight) || 0) * scaleForCanvas : 0;
+    // 长图里不画 Kawaii Bar，所以行高总和要扣掉它，否则整张图会高出一条工具栏。
     const contentHeight = previewMetrics
-      ? Math.max(rows.length * 28, previewMetrics.targetHeight * scaleForCanvas)
+      ? Math.max(rows.length * 28, previewMetrics.targetHeight * scaleForCanvas - topBarHeight - bottomPadding)
       : null;
     const rowHeights = contentHeight
       ? rowPercents.map((percent) => Math.max(28, Math.round(contentHeight * percent / 100)))
@@ -10194,9 +10284,9 @@
       state.themeAppSync.borderEnabled = typeof payload.borderEnabled === "boolean" ? payload.borderEnabled : PREVIEW_KEY_BORDER_ENABLED;
       state.themeAppSync.borderOutline = typeof payload.borderOutline === "boolean" ? payload.borderOutline : false;
       state.themeAppSync.gboardStyle = typeof payload.gboardStyle === "boolean" ? payload.gboardStyle : false;
-      state.themeAppSync.keyHGap = typeof payload.keyHGap === "number" ? payload.keyHGap : 3;
+      state.themeAppSync.keyHGap = typeof payload.keyHGap === "number" ? payload.keyHGap : 2;
       state.themeAppSync.keyVGap = typeof payload.keyVGap === "number" ? payload.keyVGap : 3;
-      state.themeAppSync.keyRadius = typeof payload.keyRadius === "number" ? payload.keyRadius : 4;
+      state.themeAppSync.keyRadius = typeof payload.keyRadius === "number" ? payload.keyRadius : 12;
       state.themeAppSync.punctPos = typeof payload.punctPos === "string" ? payload.punctPos : "bottom";
       // 分体中缝宽度（app 端桥接若提供 splitGapPercent / splitAlignHalves 则同步；缺省保留本地值）
       if (typeof payload.splitGapPercent === "number") state.themeAppSync.splitGapPercent = payload.splitGapPercent;
@@ -11856,6 +11946,19 @@
     }
   }
 
+  // 旧版编辑器把「同步 App 主题配置」的默认值写成 3/4/6；App 的真实默认是
+  // ThemePrefs 的 keyHorizontalMargin=2、keyVerticalMargin=3、keyRadius=12。
+  // 三个值都还是旧默认才迁移，用户改过任意一项就原样保留。
+  function migrateLegacyPreviewKeyDefaults(snap) {
+    const sync = snap && snap.themeAppSync;
+    if (!sync || typeof sync !== "object") return;
+    if (Number(sync.keyHGap) === 3 && Number(sync.keyVGap) === 4 && Number(sync.keyRadius) === 6) {
+      sync.keyHGap = 2;
+      sync.keyVGap = 3;
+      sync.keyRadius = 12;
+    }
+  }
+
   async function restoreDraftFromStorage() {
     let raw = "";
     try { raw = localStorage.getItem(DRAFT_KEY) || ""; } catch (_) { return false; }
@@ -11877,6 +11980,8 @@
     } catch (error) {
       assetIds.forEach((id) => state.draftAssetById.set(id, { url: "", pending: false, error: error.message }));
     }
+    migrateLegacyPreviewKeyDefaults(snap);
+    raw = JSON.stringify(snap);
     const ok = restoreSnapshot(raw);
     if (ok) {
       history.lastCommitted = currentHistorySnapshot();
@@ -12009,17 +12114,12 @@
     };
   }
 
-  // 预览是等比缩放的；pxPerDp 用真机量测的 maxWidth/(screenWidth/density)；
-  // 没有 IME 量测时退回 keyboardRenderWidth/LIVE_PREVIEW_KEYBOARD_MAX_WIDTH。
+  // 预览是等比缩放的：画布宽 / 设备逻辑宽 = 本预览的 px/dp。
+  // 工具栏 40dp、footprint 44dp、圆角与图标都乘这个比例，与按键用同一把尺子。
   function previewToolbarPxPerDp(previewMetrics, keyboardRenderWidth) {
-    const raw = state.themeAppSync.previewMetrics;
-    const screenWidth = Number(raw?.screenWidthPx) || 0;
-    const density = Number(raw?.density) || 0;
-    if (previewMetrics && screenWidth > 0 && density > 0) {
-      return Math.max(0.05, previewMetrics.maxWidth / (screenWidth / density));
-    }
-    const unit = Math.max(1, Number(keyboardRenderWidth) || LIVE_PREVIEW_KEYBOARD_MAX_WIDTH);
-    return unit / LIVE_PREVIEW_KEYBOARD_MAX_WIDTH;
+    const metrics = previewMetrics || resolvePreviewMetrics();
+    const width = Number(keyboardRenderWidth) > 0 ? Number(keyboardRenderWidth) : LIVE_PREVIEW_KEYBOARD_MAX_WIDTH;
+    return Math.max(0.05, width / Math.max(1, Number(metrics?.maxWidth) || width));
   }
 
   // 图标来源与图标主题面板一致：内联 SVG → svg；本地 blob/data → url；
@@ -12066,12 +12166,13 @@
   function renderKeyboardToolbarPreviewHtml(previewMetrics, keyboardRenderWidth) {
     const TB = window.F5aToolbarPreview;
     if (!TB || state.previewKbToolbar === false) return "";
-    const heightRaw = Number(previewMetrics?.topBarHeight) || 0;
+    const pxPerDp = previewToolbarPxPerDp(previewMetrics, keyboardRenderWidth);
+    const heightDp = Number(previewMetrics?.topBarHeight) || 0;
     const html = TB.render({
       show: true,
       keyBorder: !!state.themeAppSync.borderEnabled,
-      heightPx: heightRaw > 0 ? heightRaw : 0,
-      pxPerDp: previewToolbarPxPerDp(previewMetrics, keyboardRenderWidth),
+      heightPx: heightDp > 0 ? Math.round(heightDp * pxPerDp) : 0,
+      pxPerDp,
       colors: resolveToolbarPreviewColors(),
       iconFor: toolbarPreviewIconFor,
       buttons: toolbarPreviewButtons(),
@@ -12132,6 +12233,8 @@
     if (previewSplit) { previewSplit.checked = !textEditor && !!state.previewSplit; previewSplit.disabled = textEditor || symbolPanel; }
     const composing = el("pt-composing");
     if (composing) { composing.checked = !textEditor && !!state.previewComposing; composing.disabled = textEditor || symbolPanel; }
+    const shift = el("pt-shift");
+    if (shift) { shift.checked = !textEditor && !!state.previewShift; shift.disabled = textEditor || symbolPanel; }
     const splitGap = el("pt-split-gap");
     const splitControlsEnabled = !textEditor && !symbolPanel && !!state.previewSplit;
     if (splitGap) {
@@ -12211,6 +12314,11 @@
     el("pt-split")?.addEventListener("change", (e) => {
       state.previewSplit = !!e.target.checked;
       saveLocalSplitPrefs();
+      syncPreviewToolbarUi();
+      renderLayoutPreview();
+    });
+    el("pt-shift")?.addEventListener("change", (e) => {
+      state.previewShift = !!e.target.checked;
       syncPreviewToolbarUi();
       renderLayoutPreview();
     });

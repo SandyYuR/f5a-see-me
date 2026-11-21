@@ -40,6 +40,7 @@ function loadApp() {
       setAuxBarConfig, setAuxBarKeys, getMetaContainer, submodeNames, getRows, setRows, getVariantRows,
       pinPreviewContainerWidth, resolveTextEditorPreviewRows, resolveTextEditorPreviewGeometry,
       buildTextEditorPreviewHtml, textEditorPreviewButtonColors, textEditorPreviewKeyFaceHtml,
+      previewTitleFromObj, previewLetterCase,
       duplicateMiddleKeyForPreview, moveKey, deleteKey };
   `;
   const source = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
@@ -121,7 +122,7 @@ test('主题设置和图标缩略图支持撤销、草稿恢复，兼容旧草�
   r.state.layout = layout('A'); r.beginHistoryTracking();
   r.state.themeAppSync.keyRadius = 22;
   r.state.iconThemeCatalog[0].thumbnailSvg = '<svg/>';
-  r.undo(); assert.equal(r.state.themeAppSync.keyRadius, 6);
+  r.undo(); assert.equal(r.state.themeAppSync.keyRadius, 12);
   r.redo(); assert.equal(r.state.themeAppSync.keyRadius, 22);
   const snap = r.currentHistorySnapshot();
   r.state.themeAppSync.keyRadius = 1; r.restoreSnapshot(snap);
@@ -374,18 +375,19 @@ test('预览按完整画布固定宽度，辅助栏不能缩窄整个键盘；�
   r.pinPreviewContainerWidth(); assert.equal(root.style.width, '300px');
 });
 
-test('text_editor 总高跟随设备，底栏固定 46dp，窄屏同比缩放并保底 120dp', () => {
+test('text_editor 按设备度量缩放，标题栏 40dp 与底栏 50dp 固定，总高保底 210dp', () => {
   const r = loadApp();
-  const metrics = { screenWidthPx: 1080, keyboardHeightPx: 720, density: 3 };
+  const metrics = { maxWidth: 360, targetHeight: 240, topBarHeight: 40 };
   for (const width of [360, 180]) {
     const geometry = r.resolveTextEditorPreviewGeometry(width, metrics);
     assert.equal(geometry.dpScale, width / 360);
     assert.equal(geometry.height, width * 2 / 3);
-    assert.equal(geometry.bottomHeight, 46 * width / 360);
+    assert.equal(geometry.titleHeight, 40 * width / 360);
+    assert.equal(geometry.bottomHeight, 50 * width / 360);
   }
-  assert.equal(r.resolveTextEditorPreviewGeometry(360, { ...metrics, keyboardHeightPx: 30 }).height, 120);
-  assert.equal(r.resolveTextEditorPreviewGeometry(360, null).height, 240);
-  assert.equal(r.resolveTextEditorPreviewGeometry(360, { keyboardHeightPx: 720 }).height, 240);
+  // 没有设备度量时按容器的 2/3 估高，仍保底「40 + 50 + 120」dp
+  assert.equal(r.resolveTextEditorPreviewGeometry(360, {}).height, 240);
+  assert.equal(r.resolveTextEditorPreviewGeometry(360, { targetHeight: 30 }).height, 210);
 });
 
 test('text_editor 多行共用固定底栏，权重最小 0.5，过滤无动作宏后点击保留原下标', () => {
@@ -405,13 +407,14 @@ test('text_editor 多行共用固定底栏，权重最小 0.5，过滤无动作�
   assert.equal(JSON.stringify(rows), original);
 });
 
-test('text_editor 采用主题按钮与不透明触控板，忽略合成覆盖和逐键颜色', () => {
+test('text_editor 采用逐键颜色与不透明触控板，忽略合成覆盖', () => {
   const r = loadApp(); r.state.previewComposing = true;
   const key = { type: 'MacroKey', label: '复制', tap: { macro: [] }, textColor: -65536,
     backgroundColor: -16711936, composeOverride: { type: 'MacroKey', label: '替换' } };
   const colors = r.textEditorPreviewButtonColors(key, true);
-  assert.equal(colors.textCss, r.argbToCss(r.resolveThemeTokenColor('keyTextColor')));
-  assert.equal(colors.backgroundCss, r.argbToCss(r.resolveThemeTokenColor('keyBackgroundColor')));
+  // FoxyTextEditingUi.createConfiguredButton 先取按键自己的颜色，缺省才回落到主题键色。
+  assert.equal(colors.textCss, 'rgba(255, 0, 0, 1)');
+  assert.equal(colors.backgroundCss, 'rgba(0, 255, 0, 1)');
   assert.equal(r.textEditorPreviewButtonColors(key, false).backgroundCss, 'transparent');
   const html = r.buildTextEditorPreviewHtml([[key]], { height: 240, bottomHeight: 46, dpScale: 1 }, false);
   assert.match(html, />复制<\/span>/); assert.doesNotMatch(html, /替换/);
@@ -450,4 +453,42 @@ test('text_editor 编辑与预览始终读取普通 default，不写入未使用
   assert.equal(r.state.layout.text_editor.default[0][0].main, 'E');
   assert.equal(r.state.layout.text_editor.other[0][0].main, 'O');
   assert.equal(r.state.layout.text_editor['__variant__:split'][0][0].main, 'S');
+});
+
+
+test('MacroKey 单字母 label 随 Shift 归一化，显式 displayText 保留原样', () => {
+  const r = loadApp();
+  // App: MacroKey 未写 displayText 时 label 就是默认显示文本，CapsState.None 下强制小写。
+  assert.equal(r.previewTitleFromObj({ type: 'MacroKey', label: 'A' }), 'a');
+  r.state.previewShift = true;
+  assert.equal(r.previewTitleFromObj({ type: 'MacroKey', label: 'A' }), 'A');
+  // App: 显式 displayText 不参与 None 的小写归一化，但 Shift 单次态仍把单字母改成大写。
+  assert.equal(r.previewTitleFromObj({ type: 'MacroKey', label: 'A', displayText: 'q' }), 'Q');
+  r.state.previewShift = false;
+  assert.equal(r.previewTitleFromObj({ type: 'MacroKey', label: 'A', displayText: 'q' }), 'q');
+  assert.equal(r.previewTitleFromObj({ type: 'AlphabetKey', main: 'Q', displayText: 'Q' }), 'Q');
+});
+
+test('旧草稿的按键间距/圆角默认值迁移到 App 真实的 2/3/12', async () => {
+  const r = loadApp();
+  r.storage.set('f5a-editor-draft-v1', JSON.stringify({
+    layout: layout('M'),
+    themeAppSync: { keyHGap: 3, keyVGap: 4, keyRadius: 6, borderEnabled: true }
+  }));
+  await r.restoreDraftFromStorage();
+  assert.equal(r.state.themeAppSync.keyHGap, 2);
+  assert.equal(r.state.themeAppSync.keyVGap, 3);
+  assert.equal(r.state.themeAppSync.keyRadius, 12);
+});
+
+test('用户改过任一间距/圆角时不迁移旧默认值', async () => {
+  const r = loadApp();
+  r.storage.set('f5a-editor-draft-v1', JSON.stringify({
+    layout: layout('M'),
+    themeAppSync: { keyHGap: 3, keyVGap: 4, keyRadius: 8 }
+  }));
+  await r.restoreDraftFromStorage();
+  assert.equal(r.state.themeAppSync.keyHGap, 3);
+  assert.equal(r.state.themeAppSync.keyVGap, 4);
+  assert.equal(r.state.themeAppSync.keyRadius, 8);
 });

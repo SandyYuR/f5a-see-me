@@ -1507,12 +1507,20 @@ input[type="checkbox"] {
   min-width: 0;
 }
 
-/* text_editor 使用 App 的光标触控板与固定 46dp 底栏，不走普通键盘行高/分体渲染。 */
+/* text_editor 使用 App 的光标触控板、标题栏与固定 50dp 底栏（FoxyTextEditingUi.keyHeight），
+   不走普通键盘行高/分体渲染。 */
 .text-editor-preview-frame { width: min(100%, var(--preview-keyboard-max-width)); margin: 0 auto; display: flex; flex-direction: column; }
 .text-editor-pad-area { flex: 1 1 0; min-height: 0; display: flex; }
 .text-editor-pad { flex: 1; min-width: 0; position: relative; overflow: hidden; }
 .text-editor-pad-prompts { position: absolute; inset: 0; width: 100%; height: 100%; font-weight: 400; text-anchor: middle; }
 .text-editor-bottom { flex: 0 0 auto; width: 100%; }
+/* 标题栏：TitleUi 返回钮 40dp + 16sp 粗体标题 + 右侧 undo/redo/clipboard，底色 barColor */
+.text-editor-titlebar { flex: 0 0 auto; width: 100%; display: flex; align-items: center; gap: 0; }
+.text-editor-titlebar .te-title { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 700; padding-left: 8px; box-sizing: border-box; }
+.text-editor-titlebar .te-actions { flex: 0 0 auto; display: flex; align-items: center; }
+.text-editor-titlebar .te-btn { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; border: 0; background: transparent; padding: 0; color: inherit; }
+.text-editor-titlebar .te-btn-icon { display: block; object-fit: contain; background-position: center; background-size: contain; background-repeat: no-repeat; -webkit-mask-position: center; -webkit-mask-size: contain; -webkit-mask-repeat: no-repeat; mask-position: center; mask-size: contain; mask-repeat: no-repeat; }
+.text-editor-titlebar .te-btn-glyph { line-height: 1; }
 .text-editor-key-row { display: flex; width: 100%; }
 .text-editor-key-slot { flex: 0 0 auto; min-width: 0; }
 .text-editor-key.layout-key { height: 100%; margin: 0; font-weight: 400; }
@@ -1528,6 +1536,7 @@ input[type="checkbox"] {
   display: flex;
   gap: 0;
   min-height: var(--row-height, 42px);
+  align-items: center;
   width: min(100%, var(--preview-keyboard-max-width, 576px));
   justify-content: center;
   padding: 0 var(--preview-side-padding, 0px);
@@ -1543,6 +1552,7 @@ input[type="checkbox"] {
 .layout-key {
   height: var(--key-height, calc(var(--row-height, 42px) - var(--preview-key-vgap, 0px) * 2));
   width: 100%;
+  box-sizing: border-box;
   color: var(--text);
   border-radius: var(--preview-key-radius, 6px);
   border: 1px solid var(--border);
@@ -1557,7 +1567,7 @@ input[type="checkbox"] {
   font-size: clamp(14px, 42cqw, 23px);
   cursor: default;
   container-type: inline-size;
-  margin: max(var(--preview-key-vgap, 0px), 2px) 0;
+  margin: 0;
 }
 
 .layout-key.placeholder-key-ghost {
@@ -3891,7 +3901,8 @@ html.site-light .sym-entry.selected {
    几何/配色由 js/toolbar-preview.js 内联写死,这里只负责形状与排版兜底。 */
 .kb-tb-host {
   width: min(100%, var(--preview-keyboard-max-width, 576px));
-  margin: 0 auto 8px;
+  /* 实机的 Kawaii Bar 与键盘视图之间没有额外间隙，这里也不能多留一条缝。 */
+  margin: 0 auto;
   box-sizing: border-box;
 }
 .kb-tb-host-status { margin-bottom: 0; }
