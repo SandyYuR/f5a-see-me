@@ -1,5 +1,5 @@
 /* f5a-see-me — 网页键盘布局编辑器
- * symbol-preview.js — 符号面板预览（对照 foxy-editor 的 symbol-preview.js）
+ * symbol-preview.js — 当前输入法的符号面板预览
  *
  * 存在理由：符号 / emoji / 颜文字 三类 catalog 在 App 里**不是弹层**，
  * 而是一块**整屏替换键盘**的横排面板。编辑符号时看不到它长什么样，
@@ -9,19 +9,11 @@
  *   切换由 app.js 的 setActiveTab() 决定；
  *   本模块只负责「把面板画进给定容器」。
  *
- * 移植来源：`D:/GitHub/foxy/foxy-editor/js/symbol-preview.js`（500 行），
- * 其几何规格来自 App 反编译逐行核对（`foxy/foxy-render-spec.md` §8，
- * `ly.java` / `cu.java` / `cv.java`）。**改这里的几何必须先看那份规范**。
+ * 现行几何与配色来自输入法 SymbolPanelUi.kt / KeyView.kt / PickerWindowPreset.kt。
+ * 分组栏支持侧栏与底栏；格子复用按键的主题颜色、圆角与间距。
  *
- * 与 foxy 版的差异（都是 f5a 侧没有对应物，不是简化）：
- *   · 配色走 f5a 自己的 21 个主题 token。foxy 用的 candidateHighlightColor /
- *     keyHintTextColor / toolTextColor / altKeyboardColor 在 f5a 没有同名 token，
- *     按语义就近映射（见「二、配色」的 MAPPING 注释）。
- *   · 面板底与「布局预览容器底」同一条规则（f5a 的 resolvePreviewSurfaceColor），
- *     由 app.js 通过 opts.surface() 注入，模块不自己判 —— 保证与键盘预览同色。
- *   · 描边开关 f5a 是 borderEnabled + borderOutline 两个（对应 foxy 的 B/C）。
- *   · 尺寸由 app.js 传入（复用 f5a 已有的预览宽高解析），模块不另算一套。
- *   · 数据从 window.F5aSymbolPanel.getState() 读，不反向依赖 app.js 内部。
+ * 尺寸、主题颜色和图标由 app.js 注入；数据读取 F5aSymbolPanel.getState()。
+ * 预览风格只控制呈现，不改符号文件或输入法偏好。
  *
  * 本文件只挂 window.F5aSymbolPreview / globalThis / module.exports；
  * 无 DOM 环境下（Node 测试）dp/SPEC/box/groups 等纯逻辑照常可用。
@@ -36,13 +28,8 @@
    * 一、几何换算
    * ================================================================ */
 
-  /* App 的 dp → 预览 px。
-   *
-   * 键盘预览里 `unit = portraitW / 10`，即「10 个键宽单位铺满屏宽」，
-   * 相当于真实手机的 360dp 宽屏（10 × 36dp）。所以：
-   *     1dp ≈ portraitW / 360 px = unit / 36
-   * 用这个比例把规范 §8 表里的 dp 值换成预览像素，面板才会与键盘同一尺度。
-   * （别用固定 px：预览宽度随窗口变，写死会让面板与键盘比例失调。） */
+  /* app.js 注入 unit = 36 × 画布宽 / 设备逻辑宽。
+   * 1dp = unit / 36px，与键盘、工具栏使用相同尺度。 */
   PV.dp = function (dp, unit) {
     var u = (typeof unit === 'number' && unit > 0) ? unit : 36;
     return Math.round(dp * (u / 36) * 100) / 100;
@@ -50,27 +37,30 @@
   /* 别名：与 foxy 的 FE.symbolPreviewDp 同名，便于两文件对照阅读 */
   PV.symbolPreviewDp = PV.dp;
 
-  /* 规范 §8 的固定规格（dp/sp）——集中一处，便于对照 foxy 的
-   * FE.SYMBOL_PREVIEW_SPEC 逐项核对。**数值一字不改**。 */
+  /* SymbolPanelUi 的固定规格（dp/sp）；按键圆角和间距由当前主题注入。 */
   PV.SPEC = {
     panelLeftColDp: 84,        /* ly.java:148 b(84) */
     groupItemHeightDp: 40,     /* ly.java:207 this.g */
     groupItemFontSp: 13,       /* ly.java:285 */
-    groupItemPadX: 4, groupItemPadY: 2,   /* ly.java:288 b(4),b(2),b(4),b(2) */
-    groupItemMarginDp: 2,      /* ly.java:141/145 b(2) */
+    groupItemPadX: 12, groupItemPadY: 2,
+    groupItemMarginDp: 0,
     cellHeightDp: 40,          /* ly.java:207/46 this.g */
     cellFontSp: 22,            /* ly.java:204 */
-    cellMarginDp: 2,           /* ly.java:216-217 */
-    cellRowGapDp: 4,           /* ly.java:198 bottomMargin b(4) */
-    cellCornerDp: 6,           /* ly.java:335 this.i=6 */
+    cellMarginDp: 2,
+    cellRowGapDp: 0,
+    cellCornerDp: 12,
     cellStrokeDp: 1,           /* ly.java:333 b(1) */
     columnsPerRow: 6,          /* ly.java:45 this.f=6 */
     columnsPerRowMultiLine: 1, /* ly.java:423 z ? 1 : 6 */
     hotkeyFontSp: 20,          /* ly.java:162 */
-    leftColPadLeftDp: 2, leftColPadRightDp: 4,  /* ly.java:65 */
-    cellsLeftMarginDp: 4,      /* ly.java:152 */
-    panelCornerDp: 6,          /* 面板圆角，与键盘容器同一观感 */
-    listTopMarginDp: 4         /* 分组列表与面板顶的距离 */
+    leftColPadLeftDp: 0, leftColPadRightDp: 0,
+    cellsLeftMarginDp: 0,
+    panelCornerDp: 0,
+    listTopMarginDp: 0,
+    bottomBarHeightDp: 40,
+    utilityKeyWidthDp: 56,
+    tabMinWidthDp: 48,
+    utilityKeyGapDp: 1
   };
   PV.SYMBOL_PREVIEW_SPEC = PV.SPEC;
 
@@ -100,16 +90,8 @@
    * 二、配色（由 app.js 通过 opts.theme(field) 注入）
    * ================================================================ */
 
-  /* f5a 侧 token 映射（foxy 字段 → f5a token）：
-   *   keyBackgroundColor      → keyBackgroundColor      （同名，格子底）
-   *   candidateTextColor      → candidateTextColor      （同名，格子字）
-   *   candidateHighlightColor → keyPressHighlightColor  （选中格子底；f5a 无「候选高亮」，
-   *                                                      按压高亮是同一语义的可用 token）
-   *   keyHintTextColor        → candidateCommentColor   （未选中分组字，次要文字）
-   *   toolTextColor           → candidateTextColor      （选中分组字，主文字）
-   *   keyBorderColor          → keyShadowColor          （f5a 的「按键边框/阴影」）
-   *   面板底                  → opts.surface()          （与布局预览容器同一条规则）
-   * 取不到就返回 null，调用方跳过写样式、走 CSS 兜底。 */
+  /* 对齐 SymbolPanelUi：普通格子用 keyTextColor/keyBackgroundColor；功能键
+   * 用 altKey 配色；选中分组用 genericActive 两色，未选文字取 keyText 65% alpha。 */
   function themeCss(opts, field) {
     if (!opts || typeof opts.theme !== 'function') return null;
     var v = opts.theme(field);
@@ -190,13 +172,14 @@
    * 从头看），给它保位置反而是错的。 */
   var selectedByKind = {};
   var groupScrollByKind = {};
+  var groupHorizontalScrollByKind = {};
 
   PV.getSelected = function (kind) {
     var v = parseInt(selectedByKind[kind], 10);
     return (v >= 0) ? v : 0;
   };
   PV.getGroupScroll = function (kind) { return groupScrollByKind[kind] || 0; };
-  PV.resetMemo = function () { selectedByKind = {}; groupScrollByKind = {}; };
+  PV.resetMemo = function () { selectedByKind = {}; groupScrollByKind = {}; groupHorizontalScrollByKind = {}; };
 
   /* 外部设选中分组（app.js 若要把左侧编辑列表的展开项同步过来时用）。
    * 负值/非法一律回落 0 —— 越界值绝不能带进渲染。 */
@@ -218,6 +201,7 @@
     var top = el.scrollTop;
     if (typeof top !== 'number' || !(top >= 0)) return;
     groupScrollByKind[kind] = top;
+    if (typeof el.scrollLeft === 'number' && el.scrollLeft >= 0) groupHorizontalScrollByKind[kind] = el.scrollLeft;
   }
 
   /* ================================================================
@@ -244,7 +228,7 @@
       frame = null;
       if (!active) return;
       var sizes = cells.map(function (cell) {
-        var label = cell.firstElementChild;
+        var label = cell.__previewLabel || cell.firstElementChild;
         var style = root.getComputedStyle(cell);
         var width = cell.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
         var height = cell.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
@@ -341,6 +325,10 @@
     var groups = PV.groups(data);
     var multi = data.multiLine;
     var spec = PV.SPEC;
+    var bottomStyle = opts.panelStyle === 'bottom';
+    var hMargin = PV.dp(Number.isFinite(Number(opts.keyHGap)) ? Math.max(0, Number(opts.keyHGap)) : 2, unit);
+    var vMargin = PV.dp(Number.isFinite(Number(opts.keyVGap)) ? Math.max(0, Number(opts.keyVGap)) : 3, unit);
+    var keyRadius = PV.dp(Number.isFinite(Number(opts.keyRadius)) ? Math.max(0, Number(opts.keyRadius)) : 12, unit);
     // PickerWindowPreset.kt 的默认字号；multiLine 不表示文字可以换行。
     var cellFontSp = data.kind === 'kaomoji' ? 15 : (data.kind === 'symbols' ? 18 : spec.cellFontSp);
     var notes = [];
@@ -351,11 +339,21 @@
     /* ---- 配色（注入取不到 → 全 null，走 CSS 兜底） ---- */
     var bgPanel = (typeof opts.surface === 'function') ? opts.surface() : null;
     var bgCell = themeCss(opts, 'keyBackgroundColor');
-    var fgCell = themeCss(opts, 'candidateTextColor');
-    var bgCellSel = themeCss(opts, 'keyPressHighlightColor');
-    var fgGroup = themeCss(opts, 'candidateCommentColor');
-    var fgGroupSel = themeCss(opts, 'candidateTextColor');
+    var fgCell = themeCss(opts, 'keyTextColor');
+    var bgCellSel = themeCss(opts, 'genericActiveBackgroundColor');
+    var fgGroup = themeCss(opts, 'groupInactiveTextColor') || themeCss(opts, 'keyTextColor');
+    var fgGroupSel = themeCss(opts, 'genericActiveForegroundColor');
     var strokeCss = strokeOn(opts) ? themeCss(opts, 'keyShadowColor') : null;
+    var borderEnabled = opts.borderEnabled == null ? strokeOn(opts) : !!opts.borderEnabled;
+    var shadowCss = borderEnabled && !strokeCss ? themeCss(opts, 'keyShadowColor') : null;
+    var utilityBg = themeCss(opts, 'altKeyBackgroundColor');
+    var utilityFg = themeCss(opts, 'altKeyTextColor');
+    function keyFill(node, background) {
+      node.style.borderRadius = keyRadius + 'px';
+      if (borderEnabled && background) node.style.background = background;
+      if (strokeCss) node.style.border = PV.dp(spec.cellStrokeDp, unit) + 'px solid ' + strokeCss;
+      if (shadowCss) node.style.boxShadow = '0 ' + PV.dp(1, unit) + 'px 0 ' + shadowCss;
+    }
 
     /* ---- 盒子：与布局预览同尺寸 ---- */
     var box = PV.box(unit, opts);
@@ -363,7 +361,7 @@
     /* ---- 面板容器：横排（ly.java:61 setOrientation(0)） ---- */
     var panel = h('div', { class: 'sym-pv' });
     panel.style.display = 'flex';
-    panel.style.flexDirection = 'row';
+    panel.style.flexDirection = bottomStyle ? 'column' : 'row';
     panel.style.width = box.width ? (box.width + 'px') : '100%';
     panel.style.height = box.height ? (box.height + 'px') : '100%';
     panel.style.boxSizing = 'border-box';
@@ -376,17 +374,24 @@
 
     /* ---- 左列：分组列表 + 底部两个热键（宽 84dp） ---- */
     var leftCol = h('div', { class: 'sym-pv-left' });
-    leftCol.style.width = PV.dp(spec.panelLeftColDp, unit) + 'px';
+    leftCol.style.width = bottomStyle ? '100%' : PV.dp(spec.panelLeftColDp, unit) + 'px';
+    if (bottomStyle) leftCol.style.height = PV.dp(spec.bottomBarHeightDp, unit) + 'px';
     leftCol.style.flex = '0 0 auto';
     leftCol.style.display = 'flex';
-    leftCol.style.flexDirection = 'column';
+    leftCol.style.flexDirection = bottomStyle ? 'row' : 'column';
     leftCol.style.paddingLeft = PV.dp(spec.leftColPadLeftDp, unit) + 'px';
     leftCol.style.paddingRight = PV.dp(spec.leftColPadRightDp, unit) + 'px';
     leftCol.style.boxSizing = 'border-box';
 
     var listBox = h('div', { class: 'sym-pv-groups' });
     listBox.style.flex = '1 1 auto';
-    listBox.style.overflowY = 'auto';
+    listBox.style.overflowY = bottomStyle ? 'hidden' : 'auto';
+    listBox.style.overflowX = bottomStyle ? 'auto' : 'hidden';
+    listBox.style.minWidth = '0';
+    if (bottomStyle) {
+      listBox.style.display = 'flex';
+      listBox.style.flexDirection = 'row';
+    }
     listBox.style.marginTop = PV.dp(spec.listTopMarginDp, unit) + 'px';
     /* 持续记忆滚动位置（见 rememberGroupScroll）：这样**非点击**导致的重渲染
      * （新增/删除分组、导入、重置）也不会把用户滚下去的位置丢掉。 */
@@ -400,10 +405,17 @@
       var el = h('div', {
         class: 'sym-pv-group' + (on ? ' sym-pv-group-sel' : ''),
         title: (g.name || '（未命名）') + '（' + g.count + ' 条）',
-        'data-group-index': String(g.index)
-      }, g.name || '（未命名）');
+        'data-group-index': String(g.index),
+        role: 'button', tabindex: '0', 'aria-pressed': on ? 'true' : 'false'
+      });
       el.style.height = gH + 'px';
-      el.style.lineHeight = gH + 'px';
+      el.style.lineHeight = '1.2';
+      el.style.display = 'flex';
+      el.style.alignItems = 'center';
+      el.style.justifyContent = 'center';
+      el.style.position = 'relative';
+      el.style.flex = '0 0 auto';
+      if (bottomStyle) el.style.minWidth = PV.dp(spec.tabMinWidthDp, unit) + 'px';
       el.style.fontSize = PV.dp(spec.groupItemFontSp, unit) + 'px';
       el.style.padding = PV.dp(spec.groupItemPadY, unit) + 'px ' +
         PV.dp(spec.groupItemPadX, unit) + 'px';
@@ -411,15 +423,28 @@
       el.style.boxSizing = 'border-box';
       el.style.overflow = 'hidden';
       el.style.whiteSpace = 'nowrap';
-      el.style.textOverflow = 'ellipsis';
+      el.style.textOverflow = 'clip';
       el.style.textAlign = 'center';
       el.style.cursor = 'pointer';
       /* 未选中：底**透明**（ly.java:320-321）
        * 已选中：底 = 选中底色的映射 token */
       if (on && fgGroupSel) el.style.color = fgGroupSel;
       else if (!on && fgGroup) el.style.color = fgGroup;
-      if (on && bgCellSel) el.style.background = bgCellSel;
-      el.addEventListener('click', function () {
+      if (on) {
+        var fill = h('span', { class: 'sym-pv-group-fill', 'aria-hidden': 'true' });
+        fill.style.position = 'absolute';
+        fill.style.inset = vMargin + 'px ' + hMargin + 'px';
+        keyFill(fill, bgCellSel);
+        // Active tabs keep their key-shaped fill even when keyboard borders are off.
+        if (bgCellSel) fill.style.background = bgCellSel;
+        el.appendChild(fill);
+      }
+      var groupLabel = h('span', { class: 'sym-pv-group-text' }, g.name || '（未命名）');
+      groupLabel.style.position = 'relative';
+      groupLabel.style.zIndex = '1';
+      el.appendChild(groupLabel);
+      el.__previewLabel = groupLabel;
+      function select() {
         /* ⚠️ 重建**之前**先把左列滚到哪记下来：随后重渲染会清空并重建面板，
          * 新的 .sym-pv-groups 是全新节点、scrollTop 归零。少了这一句，
          * 用户滚到下面的分组后一点切换就被弹回顶部（而他要选的分组就在下面）。
@@ -428,52 +453,57 @@
         selectedByKind[data.kind] = g.index;
         if (typeof opts.onSelectGroup === 'function') opts.onSelectGroup(data.kind, g.index);
         if (lastRender) PV.render(lastRender.host, lastRender.opts);
+      }
+      el.addEventListener('click', select);
+      el.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); }
       });
       groupEls.push(el);
       listBox.appendChild(el);
     });
-    leftCol.appendChild(listBox);
+    if (!bottomStyle) leftCol.appendChild(listBox);
 
-    /* 底部「⌨」「⌫」：高 40dp、各占 1/2 宽、字号 20sp（ly.java:139-147,159-171）。
-     * App 里 ⌨ = 返回键盘、⌫ = 删除；预览里只画出来（编辑器不执行上屏）。
-     *
-     * ⭐ **底色/圆角/描边与右侧符号格子完全同款** —— 这是必须还原的：
-     * 创建它们的 `a()`（ly.java:159-171，`f(z9Var)` 在 :167）与创建格子那段
-     * （ly.java:202-218，`f(z9Var)` 在 :209）调的是**同一个 `f()`**
-     * （ly.java:326-341）：
-     *     gradientDrawable.setColor(this.a.j)          // 底 = keyBackgroundColor
-     *     if (B && C) setStroke(b(1), this.a.l)        // 描边仅当两个开关同时开
-     *     setCornerRadius(clamp(6dp, 0, min(w,h)/2))   // 圆角 6dp 且夹到短边一半
-     * 字色也同一个：`this.a.n`（candidateTextColor，:166 与 :208）。
-     * 若只给字色不给底色，两个热键看起来像浮在面板上的纯文字，
-     * 而手机上它们是和右边一样的圆角色块。 */
+    /* 功能键使用 Alternative 配色，40dp 高；侧栏两键均分84dp，底栏每键56dp。
+     * 图标共用 toolbar.virtual_keyboard / keys.backspace 主题槽位。 */
     var hotkeys = h('div', { class: 'sym-pv-hotkeys' });
     hotkeys.style.display = 'flex';
     hotkeys.style.flex = '0 0 auto';
-    hotkeys.style.marginBottom = gGap + 'px';
+    hotkeys.style.marginBottom = '0';
     var hkH = PV.dp(spec.cellHeightDp, unit);
-    var hkRadius = Math.min(PV.dp(spec.cellCornerDp, unit), hkH / 2);
+    var hkRadius = Math.min(keyRadius, hkH / 2);
     var hkStroke = PV.dp(spec.cellStrokeDp, unit);
+    var utilityNodes = [];
     ['⌨', '⌫'].forEach(function (glyph, gi) {
       var b = h('div', {
         class: 'sym-pv-hotkey',
-        title: gi === 0 ? '返回键盘（App 端）' : '删除（App 端）'
-      }, glyph);
-      b.style.flex = '1 1 0';
-      b.style.height = hkH + 'px';
-      b.style.lineHeight = hkH + 'px';
+        title: gi === 0 ? '返回键盘（App 端）' : '删除（App 端）',
+        'aria-hidden': 'true'
+      });
+      var icon = typeof opts.iconHtml === 'function' ? opts.iconHtml(gi === 0 ? 'toolbar.virtual_keyboard' : 'keys.backspace') : '';
+      if (icon) b.innerHTML = icon;
+      else b.textContent = glyph;
+      b.style.flex = bottomStyle ? '0 0 auto' : '1 1 0';
+      b.style.height = Math.max(1, hkH - 2 * vMargin) + 'px';
+      b.style.lineHeight = Math.max(1, hkH - 2 * vMargin) + 'px';
+      b.style.display = 'flex';
+      b.style.alignItems = 'center';
+      b.style.justifyContent = 'center';
+      if (bottomStyle) b.style.width = Math.max(1, PV.dp(spec.utilityKeyWidthDp, unit) - 2 * hMargin) + 'px';
       b.style.textAlign = 'center';
       b.style.fontSize = PV.dp(spec.hotkeyFontSp, unit) + 'px';
-      b.style.marginLeft = gi === 0 ? '0' : gGap + 'px';
+      b.style.margin = vMargin + 'px ' + hMargin + 'px';
+      b.style.marginLeft = (hMargin + (!bottomStyle && gi === 1 ? PV.dp(spec.utilityKeyGapDp, unit) : 0)) + 'px';
       b.style.boxSizing = 'border-box';
       b.style.borderRadius = hkRadius + 'px';
-      if (bgCell) b.style.background = bgCell;
-      if (fgCell) b.style.color = fgCell;
-      if (strokeCss) b.style.border = hkStroke + 'px solid ' + strokeCss;
-      hotkeys.appendChild(b);
+      keyFill(b, utilityBg);
+      if (utilityFg) b.style.color = utilityFg;
+      utilityNodes.push(b);
+      if (!bottomStyle) hotkeys.appendChild(b);
     });
-    leftCol.appendChild(hotkeys);
-    panel.appendChild(leftCol);
+    if (!bottomStyle) {
+      leftCol.appendChild(hotkeys);
+      panel.appendChild(leftCol);
+    }
 
     /* ---- 左列的滚动容器尺寸约束 ----
      * 左列是 flex 纵向布局：分组列表 flex:1 滚动、底部热键固定。
@@ -489,7 +519,7 @@
     rightCol.style.flex = '1 1 auto';
     rightCol.style.minWidth = '0';
     rightCol.style.minHeight = '0';   /* flex 子项默认 min-height:auto 会撑着不滚 */
-    rightCol.style.marginLeft = PV.dp(spec.cellsLeftMarginDp, unit) + 'px';
+    rightCol.style.marginLeft = '0px';
     rightCol.style.overflowY = 'auto';
     rightCol.style.overflowX = 'hidden';
 
@@ -497,31 +527,27 @@
     var grid = h('div', { class: 'sym-pv-cells' + (singleColumn ? ' sym-pv-multiline' : '') });
     /* 当前 App 由 PickerWindowPreset.kt 按类别固定列数；multiLine 只保留兼容数据。
      *
-     * ⚠️ **必须按行分组渲染，不能用一个 grid 固定 6 等分** —— App 端每凑满一行
-     * 就新开一个独立的横向 LinearLayout，格子用 `LayoutParams(0, h, 1.0f)` 在
-     * **该行内**等分（ly.java:192-200 新建行、:215-218 加格子）。
-     * 后果：**末行不足 6 条时，那几条会各自拉宽占满整行**（2 条各占半宽），
-     * 而不是挤在左侧、右边留空。 */
+     * GridLayoutManager 使用固定列宽，末行不足列数时仍按同样的格子宽度显示。 */
     var cols = singleColumn ? spec.columnsPerRowMultiLine : spec.columnsPerRow;
     grid.style.display = 'flex';
     grid.style.flexDirection = 'column';
     grid.style.gap = PV.dp(spec.cellRowGapDp, unit) + 'px';
 
     var cH = PV.dp(spec.cellHeightDp, unit);
-    var cGap = PV.dp(spec.cellMarginDp, unit);
-    var cRadius = PV.dp(spec.cellCornerDp, unit);
+    var cGap = hMargin;
+    var cRadius = keyRadius;
     var cur = groups[sel];
     var cellEls = [];
     var rowEls = [];
-    /* 按 cols 条切行：每行一个 flex 行容器，行内格子 `flex:1 1 0` 等分
-     * （ly.java:192-218）。margin 仍按「每格左右各 2dp」写（App 用
-     * setMarginStart/End(b(2))），行的首尾格因此也带 margin —— 与 App 一致。 */
+    /* 按 cols 条切行；所有行都保留固定列宽和40dp格高，键面缩进当前主题间距。 */
     var syms = (cur.symbols || []);
     for (var ri = 0; ri < syms.length; ri += cols) {
       var rowSyms = syms.slice(ri, ri + cols);
       var rowEl = h('div', { class: 'sym-pv-row' });
       rowEl.style.display = 'flex';
       rowEl.style.flexDirection = 'row';
+      rowEl.style.height = cH + 'px';
+      rowEl.style.flex = '0 0 auto';
       rowSyms.forEach(function (sym) {
         var cell = h('div', {
           class: 'sym-pv-cell',
@@ -530,9 +556,9 @@
         var label = h('span', { class: 'sym-pv-cell-text' },
           sym === '' ? '（空）' : String(sym).replace(/\r\n?|\n/g, ' '));
         cell.appendChild(label);
-        cell.style.flex = '1 1 0';
+        cell.style.flex = '0 0 calc(' + (100 / cols) + '% - ' + (2 * cGap) + 'px)';
         cell.style.minWidth = '0';   /* flex 子项默认 min-width:auto 会被长内容顶宽 */
-        cell.style.height = cH + 'px';
+        cell.style.height = Math.max(1, cH - 2 * vMargin) + 'px';
         cell.style.padding = '0 ' + cGap + 'px';
         cell.style.whiteSpace = 'nowrap';
         cell.style.overflow = 'hidden';
@@ -542,11 +568,13 @@
         cell.style.boxSizing = 'border-box';
         cell.style.marginLeft = cGap + 'px';
         cell.style.marginRight = cGap + 'px';
+        cell.style.marginTop = vMargin + 'px';
+        cell.style.marginBottom = vMargin + 'px';
         cell.style.fontSize = PV.dp(cellFontSp, unit) + 'px';
         cell.style.textAlign = 'center';
         /* 圆角 6dp 且 clamp 到「短边一半」（ly.java:335-340）。 */
         cell.style.borderRadius = Math.min(cRadius, cH / 2) + 'px';
-        if (bgCell) cell.style.background = bgCell;
+        keyFill(cell, bgCell);
         if (fgCell) cell.style.color = fgCell;
         if (strokeCss) {
           cell.style.border = PV.dp(spec.cellStrokeDp, unit) + 'px solid ' + strokeCss;
@@ -559,10 +587,17 @@
     }
     rightCol.appendChild(grid);
     panel.appendChild(rightCol);
+    if (bottomStyle) {
+      // BottomBar: utility key · horizontally scrolling tabs · utility key.
+      leftCol.appendChild(utilityNodes[0]);
+      leftCol.appendChild(listBox);
+      leftCol.appendChild(utilityNodes[1]);
+      panel.appendChild(leftCol);
+    }
 
     /* ---- 挂上去 ---- */
     host.appendChild(panel);
-    fitCellText(rightCol, cellEls);
+    fitCellText(panel, cellEls.concat(groupEls));
 
     /* ---- 恢复左列滚动位置（见 rememberGroupScroll） ----
      * ⚠️ **必须放在填充分组项、且挂进文档之后**，不能挪到创建时：真实浏览器里
@@ -571,6 +606,7 @@
      * 别据此把这段挪上去）。 */
     var keepGroupTop = groupScrollByKind[data.kind] || 0;
     if (keepGroupTop > 0) listBox.scrollTop = keepGroupTop;
+    if (bottomStyle) listBox.scrollLeft = groupHorizontalScrollByKind[data.kind] || 0;
 
     /* ---- 说明文字**不画进 host** ---- */
     var meta = (root.F5aSymbolPanel && root.F5aSymbolPanel.kindMeta)
@@ -578,16 +614,15 @@
     notes.push('符号面板预览 · ' + meta.label + ' · 分组 ' + groups.length +
       ' 个 · 当前「' + (cur.name || '（未命名）') + '」' + cur.count + ' 条 · 每行 ' +
       cols + ' 格，格高固定 40dp；长条目单行等比缩小，不换行');
-    notes.push('左列 ' + spec.panelLeftColDp + 'dp 为分组列表与 ⌨/⌫；格子字号 ' +
-      cellFontSp + 'sp、圆角 ' + spec.cellCornerDp + 'dp；面板底与键盘底同色' +
-      '（键边框联动）。面板(.sym-pv 576)与键盘画布(.layout-row .keys 576)同宽,各比宿主(#layout-preview 596)窄 10px 内边距，分组区与符号区各自滚动' +
-      '（对齐 App 的两个 ScrollView）。⚠️ App 会在最前面插入运行时生成的' +
+    notes.push((bottomStyle ? '底栏 40dp，分组可横向滚动' : '左列 ' + spec.panelLeftColDp + 'dp，分组可纵向滚动') +
+      '；格子字号 ' + cellFontSp + 'sp，圆角和间距跟随主题。App 会在最前面插入运行时生成的' +
       '「最近」分组，编辑器没有该状态，故预览不显示。');
 
     return {
       groups: groups, selected: sel, cells: cellEls, rows: rowEls,
       multiLine: multi, columns: cols, kind: data.kind, notes: notes,
-      panel: panel, leftCol: leftCol, listBox: listBox, rightCol: rightCol, hotkeys: hotkeys
+      panel: panel, leftCol: leftCol, listBox: listBox, rightCol: rightCol, hotkeys: hotkeys,
+      panelStyle: bottomStyle ? 'bottom' : 'sidebar'
     };
   };
 

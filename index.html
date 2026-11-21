@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>中州鹅 - Rime 键盘可视化编辑器</title>
-  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
-  <link rel="stylesheet" href="./style.css?v=2026112101">
-  <link rel="stylesheet" href="./workspace.css?v=2026103101">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg?v=2026112104">
+  <link rel="stylesheet" href="./style.css?v=2026112107">
+  <link rel="stylesheet" href="./workspace.css?v=2026112102">
 </head>
 <body>
   <header class="topbar">
@@ -39,6 +39,8 @@
       <details class="preview-settings" id="preview-simulation">
         <summary>状态模拟 <span>仅预览</span></summary>
         <div class="preview-toolbar">
+        <label>屏幕方向 <select id="pt-orientation" aria-label="预览屏幕方向"><option value="auto">自动（分体横屏）</option><option value="portrait">竖屏</option><option value="landscape">横屏</option></select></label>
+        <label id="pt-symbol-style-cell" hidden>符号面板 <select id="pt-symbol-style" aria-label="符号面板预览样式"><option value="sidebar">侧栏分组</option><option value="bottom">底栏分组</option></select></label>
         <label title="预览输入合成时的按键，取消勾选恢复普通状态；不修改布局"><input type="checkbox" id="pt-composing"> 合成中</label>
         <label title="预览 Shift 单次态：字母键按大写字形显示（App 在 CapsState.None 时显示小写）；不修改布局"><input type="checkbox" id="pt-shift"> Shift 大写</label>
         <label><input type="checkbox" id="pt-split"> 分体键盘</label>
@@ -57,12 +59,18 @@
         <span class="preview-toolbar-sep" aria-hidden="true"></span>
         <label><input type="checkbox" id="pt-border"> 按键边框</label>
         <label><input type="checkbox" id="pt-stroke"> 边框描边</label>
-        <label><input type="checkbox" id="pt-hints"> 显示提示</label>
+        <label title="仅显示编辑器的操作圆点；不改变主字符和输入法副标签"><input type="checkbox" id="pt-hints"> 操作提示圆点</label>
         <label><input type="checkbox" id="pt-gboard-style"> Gboard 风格按钮</label>
         <span class="preview-toolbar-sep" aria-hidden="true"></span>
         <span class="preview-toolbar-sep" aria-hidden="true"></span>
         <label id="pt-split-gap-cell" title="预览分体键盘时的中缝宽度（app：split_keyboard_gap_percent）"><input type="checkbox" id="pt-align-halves" checked> 中缝对齐</label>
         <span class="pt-cell"><label for="pt-split-gap">中缝</label><input id="pt-split-gap" class="num-input" type="number" min="5" max="60" step="1"><span class="pt-unit">%</span></span>
+      </div>
+      <div class="preview-toolbar preview-alt-label-controls" role="group" aria-label="按键副标签设置">
+        <label><input type="checkbox" id="pt-move-main-alt" checked> 副标签存在时移动主字符</label>
+        <label><input type="checkbox" id="pt-alt-on-side"> 副标签显示在侧边</label>
+        <label>副标签侧边位置 <select id="pt-alt-side" disabled><option value="right">右侧</option><option value="left">左侧</option></select></label>
+        <label><input type="checkbox" id="pt-show-alt" checked> 显示按键副标签</label>
       </div>
       </details>
       <div class="preview-shell">
@@ -139,7 +147,7 @@
         <div class="workspace-selectors">
           <div class="spinner-strip">
             <label class="selector-field">布局<select id="layout-base-select" aria-label="布局"></select></label>
-            <label class="selector-field">子模式<select id="layout-submode-select" aria-label="子模式"></select></label>
+            <label class="selector-field">子布局<select id="layout-submode-select" aria-label="子布局"></select></label>
             <button id="layout-add-layout" class="icon-button" title="新建或复制布局">＋ 新建</button>
             <button id="layout-delete-layout" class="icon-button danger" title="删除当前布局">🗑</button>
           </div>
@@ -175,11 +183,11 @@
               </div>
               <div class="form-grid-2">
                 <div class="form-row form-inline">
-                  <label>当前布局专用高度百分比（10..90，空为默认）</label>
+                  <label>子布局竖屏高度（10..90，普通与分体共用，空为默认）</label>
                   <input id="layout-height-override" type="number" min="10" max="90" step="1">
                 </div>
                 <div class="form-row form-inline">
-                  <label>横屏专用高度百分比（10..90，空为跟随竖屏）</label>
+                  <label>子布局横屏高度（10..90，普通与分体共用，空为跟随竖屏）</label>
                   <input id="layout-height-override-landscape" type="number" min="10" max="90" step="1">
                 </div>
                 <div class="form-row form-inline">
@@ -344,6 +352,10 @@
                     <option value="none">无</option>
                   </select>
                 </div>
+                <div class="form-row"><label><input type="checkbox" id="theme-app-move-main-alt" checked> 副标签存在时移动主字符</label></div>
+                <div class="form-row"><label><input type="checkbox" id="theme-app-alt-on-side"> 副标签显示在侧边</label></div>
+                <div class="form-row form-inline"><label for="theme-app-alt-side">副标签侧边位置</label><select id="theme-app-alt-side" disabled><option value="right">右侧</option><option value="left">左侧</option></select></div>
+                <div class="form-row"><label><input type="checkbox" id="theme-app-show-alt" checked> 显示按键副标签</label></div>
               </div>
             </div>
           </details>
@@ -538,6 +550,28 @@
     <button type="button" id="float-top" class="float-bottom-right" hidden title="回到页面顶部">↑ 顶部</button>
   </div>
 
+  <dialog id="layout-row-settings-dialog" class="editor-dialog sub-dialog" aria-labelledby="layout-row-settings-title">
+    <form method="dialog" class="editor-form">
+      <div class="dialog-titlebar"><h3 id="layout-row-settings-title">行设置</h3></div>
+      <label class="form-row">整行高度百分比
+        <input id="layout-row-settings-height" type="number" min="1" max="100" step="any" placeholder="留空自动分配">
+      </label>
+      <p class="hint">同一行使用统一高度。指定各行比例后，未指定的行按输入法规则分配剩余高度。</p>
+      <label class="form-row" id="layout-row-settings-keep-wrap">
+        <span><input id="layout-row-settings-keep-together" type="checkbox"> 分体时保持整行连贯</span>
+      </label>
+      <label class="form-row">分体断点
+        <select id="layout-row-settings-boundary"></select>
+      </label>
+      <p class="hint">自动分界由输入法安排。手动分界在所选按键之后；整行保持连贯时暂不使用断点。</p>
+      <div id="layout-row-settings-status" class="status" role="status" aria-live="polite"></div>
+      <div class="toolbar dialog-toolbar">
+        <button type="button" id="layout-row-settings-cancel">取消</button>
+        <button type="button" id="layout-row-settings-save" class="primary">应用</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="layout-add-dialog" class="editor-dialog sub-dialog">
     <form method="dialog" class="editor-form">
       <div class="dialog-titlebar"><h3>新增</h3></div>
@@ -545,7 +579,8 @@
         <label>类型</label>
         <select id="layout-add-kind">
           <option value="layout">布局</option>
-          <option value="submode">子布局</option>
+          <option value="submode">方案子布局</option>
+          <option value="layer">层子布局（数字、符号等）</option>
         </select>
       </div>
       <div class="form-row">
@@ -674,6 +709,7 @@
         <input id="layout-key-display-simple" type="text">
       </div>
       <div id="layout-key-display-map-wrap" hidden>
+        <p class="hint">按方案 ID、方案名称、default、空名称依次匹配。空名称表示回退，显示文本中的空格会保留。</p>
         <div id="layout-key-display-map-rows"></div>
         <div class="toolbar"><button type="button" id="layout-key-display-map-add">添加模式</button></div>
       </div>
@@ -986,11 +1022,11 @@
   <script src="./js/draft-assets.js?v=20261013010000"></script>
   <script src="./js/builtin-presets.js?v=2026110601"></script>
   <script src="./js/symbol-data.js?v=20261014223000"></script>
-  <script src="./js/symbol-panel.js?v=2026110601"></script>
-  <script src="./js/symbol-preview.js?v=2026110601"></script>
+  <script src="./js/symbol-panel.js?v=2026112102"></script>
+  <script src="./js/symbol-preview.js?v=2026112102"></script>
   <script src="./js/random-theme.js?v=20261015050000"></script>
   <script src="./js/toolbar-preview.js?v=20261023000000"></script>
-  <script src="./js/layout-workspace.js?v=2026110601"></script>
-  <script src="./js/app.js?v=2026112101"></script>
+  <script src="./js/layout-workspace.js?v=2026112102"></script>
+  <script src="./js/app.js?v=2026112107"></script>
 </body>
 </html>

@@ -78,6 +78,7 @@ html .preview-layout-tabs button[aria-pressed="true"] { background: var(--accent
 #layout-rows .key-list { min-width: 0; padding: 4px; gap: 6px; }
 #layout-rows .layout-chip { min-width: 32px; height: 34px; padding: 6px 8px; border-radius: 6px; }
 #layout-rows .row-add-key, #layout-rows .row-copy, #layout-rows .row-delete { width: 28px; height: 28px; padding: 2px; flex-shrink: 0; }
+#layout-rows .row-settings { flex-shrink: 0; min-height: 32px; padding: 4px 8px; font-size: 12px; }
 #layout-json-card { grid-column: 1 / -1; margin: 0; }
 #layout-json-card .json-card-body { display: block; }
 #layout-json-card .cm-editor, #layout-json-card .json-editor { min-height: 300px !important; max-height: 520px !important; }

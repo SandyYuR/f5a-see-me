@@ -92,7 +92,7 @@ function makeDom(htmlIds) {
           if (d[1] === 'value') node.value = d[2];
           if (d[1] === 'checked') node.checked = true;
         }
-        if (/\bopen(?=[\s>])/.test(attrs)) node.open = true;
+        if (/\bopen(?=[\s>]|$)/.test(attrs)) node.open = true;
         stack[stack.length - 1].appendChild(node);
         if (m[3] !== '/' && !VOID_TAGS.has(tag)) stack.push(node);
       }
@@ -222,9 +222,12 @@ function loadApp(opts = {}) {
     document: doc,
     window: {
       location: { protocol: 'file:', hostname: '', search: '', origin: '' },
+      __F5A_IME_API_BASE__: opts.imeApiBase || "",
       addEventListener: noOp,
       matchMedia: () => ({ matches: false, addEventListener: noOp }),
       getComputedStyle: () => ({ getPropertyValue: () => '' }),
+      JSZip: opts.JSZip,
+      F5aDraftAssets: opts.DraftAssets,
       // 刻意不提供 jscolor：installThemeColorPicker 有 if (!window.jscolor) return 守卫
     },
     localStorage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) },
@@ -233,13 +236,20 @@ function loadApp(opts = {}) {
     alert: noOp, confirm: () => true,
     /* prompt 可注入:测试要覆盖保留名/重名分支时传入自己的实现 */
     prompt: opts.prompt || (() => null),
-    fetch: () => Promise.reject(new Error('no network in test')),
+    fetch: opts.fetch || (() => Promise.reject(new Error('no network in test'))),
     indexedDB: undefined,
+    JSZip: opts.JSZip,
+    Image: opts.Image,
   };
   context.window.document = doc;
   context.globalThis = context;
 
   const hook = `
+    const actualSyncAltLabelThemeUi = syncThemeAppSyncUiFromState;
+    const actualSyncAltLabelThemeState = syncThemeAppSyncStateFromUi;
+    const actualApplyPreviewThemeSurface = applyPreviewThemeSurface;
+    const actualRenderThemeBackgroundEditor = renderThemeBackgroundEditor;
+    const actualSyncPreviewBlurMaskGeometry = syncPreviewBlurMaskGeometry;
     /* beginHistoryTracking 在 main() 里调用，而 main 已被 hook 取代——
      * 不补调它，history.started 恒为 false，commitHistorySnapshot 会
      * 直接从守卫 return，撤销栈永远为空。 */
@@ -254,18 +264,35 @@ function loadApp(opts = {}) {
      * ReferenceError。它内部只做 rippleInput 的 readOnly/value 同步，无需 hook。 */
     window.testApi = {
       state,
+      symbolPanel: window.F5aSymbolPanel,
       renderThemeEditor, renderThemeList, renderPopupEditor,
+      buildTextEditorPreviewHtml,
       renderIconThemeSlots, renderIconThemeList, renderLayoutEditor,
-      serializePopupEntries, currentIconThemeEntry,
+      serializePopupEntries, currentIconThemeEntry, importIconThemeFromZipFile,
+      normalizeImportedThemePayload, decodeThemeFromZipFile, buildThemeZipBlob,
+      buildThemeBackgroundImageLayerCss,
+      themePreviewImage, pruneThemeCropPreviewCache,
+      actualApplyPreviewThemeSurface, actualRenderThemeBackgroundEditor, actualSyncPreviewBlurMaskGeometry,
       getRows, setRows, themeColorTokens, isCurrentIconThemeEditable,
       normalizeLayoutObject, resolveThemeTokenColor, toArgbHex, deepClone,
+      submodeNames, submodeDisplayName, entryDisplayName, allEntryKeys,
+      addSubmodeWithName, addLayout, handlePrimaryDeleteLayout,
+      getHeightOverride, getHeightOverrideLandscape, setHeightOverride, setHeightOverrideLandscape,
+      keyDialogState, appendDisplayMapRow, saveDisplayTextDialog,
+      populateMainKeyFieldsFromDraft, applyMainFieldsToDraft, normalizeDraftForSaveByAppRules,
+      openLayoutRowSettings, saveLayoutRowSettings,
       // 按键图标槽位
       iconThemeSlotsAll, iconThemeSlotSections, iconThemeSlotToDisplayName,
       iconThemeSlotSupportsText, isIconThemeSvgOnlySlot,
       explicitIconSlotOf, automaticIconSlotOf, effectiveIconSlotOf, keyIconPreviewHtml,
       parseColorValue,
+      actualSyncAltLabelThemeUi, actualSyncAltLabelThemeState, syncAltLabelControls, readAltLabelControls,
+      loadThemePrefsFromIme, saveThemePrefsToIme,
+      normalizePopupEntries, applyThemeJsonEditorInput,
+      parseMacroStep, normalizeMacroStepsForSave, validateMacroSteps, buildMacroActionFromSteps,
+      renderMacroStepBody, macroAppActions, setupPreviewToolbar, loadLocalSplitPrefs, saveLocalSplitPrefs,
       // 行为级功能项
-      saveDraftNow, currentHistorySnapshot, crc32,
+      saveDraftNow, currentHistorySnapshot, restoreSnapshot, symbols: window.F5aSymbolPanel, crc32,
       bytesToBase64Url, base64UrlToBytes,
       parseQrChunkText, normalizeQrChunkText, chunkGroupKey, buildTransferId,
       undo, redo, commitHistorySnapshot, setSiteTheme, applySiteThemeClass,

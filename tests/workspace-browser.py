@@ -218,6 +218,88 @@ try:
         assert layout(page)['drag'][0][-1]['main'] == 'A'
         print('PASS workspace drafts, guards, JSON, undo, split, and drag')
 
+        # Layer creation, source copying, shared height, and deleting only its split variant.
+        page.locator('#pt-split').uncheck()
+        upload(page, {'rime': [[alpha('A')]], 'number': [[alpha('1')]]})
+        page.locator('#layout-base-select').select_option('rime')
+        page.locator('#layout-add-layout').click()
+        page.locator('#layout-add-kind').select_option('layer')
+        expect(page.locator('#layout-add-source')).to_be_visible()
+        page.locator('#layout-add-source').select_option('number')
+        page.locator('#layout-add-name').fill('数字')
+        page.locator('#layout-add-dialog-save').click()
+        expect(page.locator('#layout-submode-select')).to_have_value('__layer__:数字')
+        expect(page.locator('#layout-submode-select option:checked')).to_have_text('层：数字')
+        assert layout(page)['rime']['__layer__:数字'][0][0]['main'] == '1'
+        page.locator('#layout-height-override').fill('35')
+        page.locator('#layout-height-override').press('Tab')
+        page.locator('#layout-height-override-landscape').fill('48')
+        page.locator('#layout-height-override-landscape').press('Tab')
+        page.locator('#layout-split-mode').check()
+        expect(page.locator('#layout-height-override')).to_have_value('35')
+        page.locator('#layout-height-override').fill('40')
+        page.locator('#layout-height-override').press('Tab')
+        child = layout(page)['rime']['__layer__:数字']
+        assert child['__meta__']['keyboard_height_percent'] == 40
+        assert child['__meta__']['keyboard_height_percent_landscape'] == 48
+        assert isinstance(child['__variant__:split'], list), 'height must not add variant metadata'
+        page.once('dialog', lambda dialog: dialog.accept())
+        page.locator('#layout-delete-layout').click()
+        expect(page.locator('#layout-split-mode')).not_to_be_checked()
+        expect(page.locator('#layout-submode-select')).to_have_value('__layer__:数字')
+        child = layout(page)['rime']['__layer__:数字']
+        assert child['default'][0][0]['main'] == '1'
+        assert '__variant__:split' not in child
+        with page.expect_download() as download:
+            page.locator('#layout-download-json').click()
+        exported = json.loads(Path(download.value.path()).read_text())
+        upload(page, exported)
+        assert layout(page) == exported, 'layer/height data must survive export and reimport'
+        print('PASS layer creation, source selection, shared height, split deletion, and round trip')
+
+        upload(page, {'numeric': [[{'type': 'NumPadKey', 'sym': 65513, 'label': '定制', 'weight': 0.2}]]})
+        page.locator('#layout-rows .layout-chip').first.click()
+        expect(page.locator('#layout-key-numpad-sym')).to_have_value('65513')
+        page.locator('#layout-key-weight').fill('0.3')
+        page.locator('#layout-key-save').click()
+        edited = layout(page)['numeric'][0][0]
+        assert edited['sym'] == 65513 and edited['label'] == '定制' and edited['weight'] == 0.3
+
+        upload(page, {'letters': [[{'type': 'AlphabetKey', 'main': 'a', 'alt': '1', 'displayText': {'': 'fallback'}}]]})
+        page.locator('#layout-rows .layout-chip').first.click()
+        page.locator('#layout-key-open-display-text').click()
+        expect(page.locator('.display-map-key')).to_have_value('')
+        page.locator('.display-map-value').fill(' padded ')
+        page.locator('#layout-key-display-save').click()
+        page.locator('#layout-key-save').click()
+        assert layout(page)['letters'][0][0]['displayText'] == {'': ' padded '}
+        print('PASS complete key editing preserves NumPad keysym/label and display mapping whitespace')
+
+        upload(page, {'row-settings': [[alpha('A'), alpha('B'), alpha('C')]]})
+        page.locator('#layout-split-mode').check()
+        before_settings = layout(page)
+        page.locator('#layout-rows .row-settings').first.click()
+        page.locator('#layout-row-settings-height').fill('101')
+        page.locator('#layout-row-settings-save').click()
+        expect(page.locator('#layout-row-settings-dialog')).to_be_visible()
+        expect(page.locator('#layout-row-settings-status')).to_contain_text('1..100')
+        assert layout(page) == before_settings
+        page.locator('#layout-row-settings-height').fill('30')
+        page.locator('#layout-row-settings-boundary').select_option('1')
+        page.locator('#layout-row-settings-keep-together').check()
+        expect(page.locator('#layout-row-settings-boundary')).to_be_disabled()
+        page.locator('#layout-row-settings-save').click()
+        saved_row = layout(page)['row-settings']['__variant__:split'][0]
+        assert all(item['rowHeightPercent'] == 30 for item in saved_row)
+        assert saved_row[0]['splitRowDisabled'] is True
+        assert saved_row[1]['splitAfter'] is True
+        page.locator('#top-undo').click()
+        assert layout(page) == before_settings
+        page.locator('#top-redo').click()
+        assert layout(page)['row-settings']['__variant__:split'][0] == saved_row
+        page.locator('#layout-split-mode').uncheck()
+        print('PASS row height, split continuity/boundary, validation, undo, and redo')
+
         # Switching themes, importing a theme, and saving a slot repaint immediately.
         page.locator('#tabbtn-icon-theme').click()
         toolbar = page.locator('#layout-preview > .kb-tb-host')
@@ -334,6 +416,24 @@ try:
             }''')
         assert not errors, errors
         print('PASS desktop/mobile geometry, touch, and zero page errors')
+        parity = context.new_page()
+        parity.goto(url, wait_until='domcontentloaded')
+        parity.add_script_tag(path=str(ROOT / 'tests/browser-parity.js'))
+        result = parity.evaluate('async () => await F5aBrowserParity.runCore()')
+        assert len(result['pass']) == 6 and not result['errors'], result
+        labels = parity.evaluate('async () => await F5aBrowserParity.runAltLabels()')
+        assert len(labels['pass']) == 7 and not labels['errors'], labels
+        text = parity.evaluate('async () => await F5aBrowserParity.runTextPreview()')
+        assert len(text['pass']) == 8 and not text['errors'], text
+        for mode in ['light', 'dark', 'auto']:
+            parity.locator(f'[data-site-theme="{mode}"]').click()
+            button = parity.locator('.text-editor-titlebar .te-btn').first
+            button.hover()
+            assert button.evaluate('(n) => getComputedStyle(n).backgroundColor') == 'rgba(0, 0, 0, 0)'
+            button.focus()
+            assert button.evaluate('(n) => getComputedStyle(n).backgroundColor') == 'rgba(0, 0, 0, 0)'
+        parity.evaluate('F5aBrowserParity.restoreStorage()')
+        print('PASS source parity: layers, row settings, macros, symbols, orientation, labels, fonts, and title surfaces')
         browser.close()
 finally:
     server.shutdown()

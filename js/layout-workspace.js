@@ -391,8 +391,13 @@
     window.addEventListener("pagehide", persist);
     document.addEventListener("visibilitychange", () => { if (document.hidden) persist(); });
     new MutationObserver(highlight).observe(el("layout-preview"), { childList: true });
-    new ResizeObserver(entries => {
-      inspector.style.setProperty("--inspector-height", `${Math.max(380, Math.round(entries[0].target.getBoundingClientRect().height))}px`);
+    let inspectorMeasureFrame = null;
+    new ResizeObserver(() => {
+      if (inspectorMeasureFrame !== null) return;
+      inspectorMeasureFrame = requestAnimationFrame(() => {
+        inspectorMeasureFrame = null;
+        inspector.style.setProperty("--inspector-height", `${Math.max(380, Math.round(el("shared-preview-host").getBoundingClientRect().height))}px`);
+      });
     }).observe(el("shared-preview-host"));
     // Stable IDs keep saved fold state independent of DOM order.
     document.querySelectorAll("details[id]").forEach(details => {

@@ -1,11 +1,6 @@
-/* 符号面板预览（js/symbol-preview.js）的落地核对。
- *
- * 这个模块的规格**不是自己定的**，是从 foxy 编辑器逐项移植的，所以核对分三层：
- *  1 规格同源 —— 把 foxy 的 FE.SYMBOL_PREVIEW_SPEC 从源码里读出来，与 f5a 的
- *                PV.SPEC 逐键逐值比；不靠「我记得是 84」这种自证。
- *  2 纯逻辑   —— dp 换算、盒子兜底、分组显示名口径、按 kind 记忆的选中与滚动。
- *  3 渲染     —— 真的调 PV.render() 画进 DOM 桩，数节点、读 style。
- */
+/* 当前输入法 SymbolPanelUi/KeyView 的符号预览对照：固定列宽、主题样式、
+ * 两种分组栏结构，以及真实渲染路径的选中和滚动恢复。FXR_ASSETS 指向 CI
+ * 或本机读取的输入法 bundled 资产，用相邻生产源码验证固定几何常量。 */
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -13,7 +8,6 @@ const path = require('node:path');
 const { loadScript } = require('./dom-app-harness.cjs');
 
 const ROOT = path.join(__dirname, '..');
-const FOXY = 'D:/GitHub/foxy/foxy-editor/js/symbol-preview.js';
 const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 
 /* 三类内置数据（与 index.html 的装载顺序一致：symbol-data.js 先于本模块） */
@@ -51,7 +45,13 @@ function host(doc) {
 function opts(extra) {
   const colors = {
     keyBackgroundColor: 'rgb(66, 55, 53)',
-    candidateTextColor: 'rgb(241, 222, 220)',
+    keyTextColor: 'rgb(241, 222, 220)',
+    altKeyBackgroundColor: 'rgb(80, 70, 68)',
+    altKeyTextColor: 'rgb(210, 190, 188)',
+    genericActiveBackgroundColor: 'rgb(255, 180, 168)',
+    genericActiveForegroundColor: 'rgb(30, 20, 18)',
+    groupInactiveTextColor: 'rgba(241, 222, 220, 0.65)',
+    candidateTextColor: 'rgb(20, 40, 60)',
     keyPressHighlightColor: 'rgb(255, 180, 168)',
     candidateCommentColor: 'rgb(180, 160, 158)',
     keyShadowColor: 'rgb(120, 100, 98)',
@@ -75,7 +75,7 @@ function findAll(el, cls, out = []) {
   return out;
 }
 
-test('SPEC 与 foxy 的 FE.SYMBOL_PREVIEW_SPEC 逐键逐值一致', () => {
+test('SPEC 对齐当前 SymbolPanelUi 的固定规格，主题圆角与间距另行注入', () => {
   const { PV } = load();
   /* foxy 那份是移植来源；文件不在本机时退化为「钉住 15 项规范值」，
    * 但绝不静默跳过——下面这组期望值就是规范 §8 的数值。 */
@@ -83,40 +83,35 @@ test('SPEC 与 foxy 的 FE.SYMBOL_PREVIEW_SPEC 逐键逐值一致', () => {
     panelLeftColDp: 84,
     groupItemHeightDp: 40,
     groupItemFontSp: 13,
-    groupItemPadX: 4,
+    groupItemPadX: 12,
     groupItemPadY: 2,
-    groupItemMarginDp: 2,
+    groupItemMarginDp: 0,
     cellHeightDp: 40,
     cellFontSp: 22,
     cellMarginDp: 2,
-    cellRowGapDp: 4,
-    cellCornerDp: 6,
+    cellRowGapDp: 0,
+    cellCornerDp: 12,
     cellStrokeDp: 1,
     columnsPerRow: 6,
     columnsPerRowMultiLine: 1,
     hotkeyFontSp: 20,
-    leftColPadLeftDp: 2,
-    leftColPadRightDp: 4,
-    cellsLeftMarginDp: 4,
+    leftColPadLeftDp: 0,
+    leftColPadRightDp: 0,
+    cellsLeftMarginDp: 0,
   };
   Object.keys(expected).forEach((k) => {
     assert.equal(PV.SPEC[k], expected[k], `SPEC.${k} 应为 ${expected[k]}`);
   });
-  if (!fs.existsSync(FOXY)) return;
-  const src = fs.readFileSync(FOXY, 'utf8');
-  const block = src.slice(src.indexOf('FE.SYMBOL_PREVIEW_SPEC = {'));
-  const body = block.slice(block.indexOf('{') + 1, block.indexOf('};'));
-  /* ⚠️ 必须先剥掉行尾注释再取键值：注释里写着 `ly.java:148 b(84)`，
-   * 直接全局匹配 `名字:数字` 会把 `java: 148` 也当成一项。 */
-  const stripped = body.replace(/\/\*[\s\S]*?\*\//g, '');
-  const foxy = {};
-  let m;
-  const re = /([A-Za-z]+)\s*:\s*(-?\d+)/g;
-  while ((m = re.exec(stripped))) foxy[m[1]] = Number(m[2]);
-  Object.keys(expected).forEach((k) => {
-    assert.equal(foxy[k], expected[k], `foxy 源码里 ${k} 与规范不一致，移植需复核`);
-    assert.equal(PV.SPEC[k], foxy[k], `PV.SPEC.${k} 与 foxy 不一致`);
-  });
+  const assets = process.env.FXR_ASSETS || path.resolve(ROOT, '../fx-rime-only/app/src/main/assets/bundled');
+  const sourcePath = path.resolve(assets, '../../java/org/fcitx/fcitx5/android/input/picker/SymbolPanelUi.kt');
+  if (process.env.FXR_ASSETS || fs.existsSync(sourcePath)) {
+    const src = fs.readFileSync(sourcePath, 'utf8');
+    for (const [constant, field] of [['SIDEBAR_WIDTH_DP', 'panelLeftColDp'], ['SIDEBAR_ITEM_HEIGHT_DP', 'groupItemHeightDp'],
+      ['GRID_ITEM_HEIGHT_DP', 'cellHeightDp'], ['BOTTOM_BAR_HEIGHT_DP', 'bottomBarHeightDp'],
+      ['UTILITY_KEY_WIDTH_DP', 'utilityKeyWidthDp'], ['TAB_MIN_WIDTH_DP', 'tabMinWidthDp']]) {
+      assert.equal(PV.SPEC[field], Number(src.match(new RegExp(`const val ${constant} = (\\d+)`))[1]));
+    }
+  }
 });
 
 test('dp 换算:unit=36 时 1dp=1px,unit 变化按比例缩放', () => {
@@ -236,7 +231,7 @@ test('渲染:面板尺寸取自传入的盒子,与布局预览同一尺寸', () 
   assert.equal(h.children[0], panel);
 });
 
-test('渲染:左列 84dp、底部两个热键与格子同款底色', () => {
+test('渲染:左列 84dp、两枚功能键使用 App 的 Alternative 配色与主题间距', () => {
   const { PV, doc } = load();
   const h = host(doc);
   const out = PV.render(h, opts({ unit: 36 }));
@@ -252,17 +247,17 @@ test('渲染:左列 84dp、底部两个热键与格子同款底色', () => {
   assert.equal(hotkeys[1].textContent, '⌫');
   hotkeys.forEach((k) => {
     /* 与格子同款:底色 = keyBackgroundColor、字色 = candidateTextColor */
-    assert.equal(k.style.background, 'rgb(66, 55, 53)');
-    assert.equal(k.style.color, 'rgb(241, 222, 220)');
-    assert.equal(k.style.height, '40px');
-    assert.equal(k.style.lineHeight, '40px');
+    assert.equal(k.style.background, 'rgb(80, 70, 68)');
+    assert.equal(k.style.color, 'rgb(210, 190, 188)');
+    assert.equal(k.style.height, '34px');
+    assert.equal(k.style.lineHeight, '34px');
     assert.equal(k.style.fontSize, '20px');
     assert.equal(k.style.border, '1px solid rgb(120, 100, 98)', '描边开启时同款');
   });
-  assert.equal(hotkeys[0].style.marginLeft, '0');
+  assert.equal(hotkeys[0].style.marginLeft, '2px');
 });
 
-test('渲染:按行分组,末行不足 6 条不补空位(格子 flex 等分)', () => {
+test('渲染:GridLayoutManager 固定列宽，末行不足六格仍保持原列宽', () => {
   const { PV, SP, doc } = load();
   const h = host(doc);
   const out = PV.render(h, opts({ unit: 36 }));
@@ -278,12 +273,12 @@ test('渲染:按行分组,末行不足 6 条不补空位(格子 flex 等分)', (
     assert.equal(row.children.length, want, `第 ${i} 行应有 ${want} 格`);
   });
   out.cells.forEach((c) => {
-    assert.equal(c.style.flex, '1 1 0', '行内等分靠 flex');
+    assert.equal(c.style.flex, `0 0 calc(${100 / cols}% - 4px)`, '每个格子占固定列宽，扣除两侧按键间距');
     assert.equal(c.style.minWidth, '0');
-    assert.equal(c.style.height, '40px');
+    assert.equal(c.style.height, '34px');
     assert.equal(c.style.alignItems, 'center');
     assert.equal(c.style.fontSize, '18px');
-    assert.equal(c.style.borderRadius, '6px');
+    assert.equal(c.style.borderRadius, '12px');
     assert.equal(c.style.background, 'rgb(66, 55, 53)');
     assert.equal(c.style.color, 'rgb(241, 222, 220)');
   });
@@ -301,7 +296,7 @@ test('渲染:颜文字和表情均固定格高、单行显示完整文本', () =
   assert.equal(out.columns, 1);
   out.rows.forEach((row) => assert.equal(row.children.length, 1));
   out.cells.forEach((c) => {
-    assert.equal(c.style.height, '40px');
+    assert.equal(c.style.height, '34px');
     assert.equal(c.style.whiteSpace, 'nowrap');
     assert.equal(c.style.textOverflow, undefined, '完整字形交给比例缩放，不使用省略号');
     assert.equal(c.style.fontSize, '15px', '对齐 App 的颜文字默认字号');
@@ -345,7 +340,7 @@ test('渲染:点击分组切换选中并就地重渲染,滚动位置不丢', () 
   assert.equal(h.children.length, 1);
   const again = findAll(h, 'sym-pv-group');
   assert.equal(again.length, out.groups.length);
-  assert.equal(again[2].style.background, 'rgb(255, 180, 168)', '选中项底 = 注入的高亮色');
+  assert.equal(findAll(again[2], 'sym-pv-group-fill')[0].style.background, 'rgb(255, 180, 168)', '选中项底 = genericActiveBackgroundColor');
   assert.equal(again[0].style.background, undefined, '未选中项底透明(不写 background)');
   const listBox2 = findAll(h, 'sym-pv-groups')[0];
   assert.equal(listBox2.scrollTop, 120, '恢复滚动位置必须在新节点挂进文档之后');
@@ -468,4 +463,40 @@ test('描边开关在 app.js 侧要求两个开关同时为真', () => {
   assert.ok(m, '未找到 symbolPreviewStrokeEnabled');
   assert.match(m[1], /borderEnabled/);
   assert.match(m[1], /borderOutline/);
+});
+
+test('底栏模式按 App 排列功能键和横向分组，切换分组保留水平滚动', () => {
+  const { PV, doc } = load();
+  const h = host(doc);
+  const out = PV.render(h, opts({ panelStyle: 'bottom', unit: 36 }));
+  assert.equal(out.panelStyle, 'bottom');
+  assert.equal(out.panel.style.flexDirection, 'column');
+  assert.equal(out.panel.children[0], out.rightCol, '符号网格位于上方');
+  assert.equal(out.panel.children[1], out.leftCol, '40dp 底栏位于下方');
+  assert.equal(out.leftCol.style.height, '40px');
+  assert.equal(out.leftCol.children[1], out.listBox, '分组位于两个功能键中间');
+  assert.equal(out.listBox.style.overflowX, 'auto');
+  assert.equal(out.leftCol.children[0].style.width, '52px', '56dp 触摸格子扣除两侧各 2dp 按键间距');
+  out.listBox.scrollTop = 0;
+  out.listBox.scrollLeft = 120;
+  findAll(out.listBox, 'sym-pv-group')[2].click();
+  assert.equal(findAll(h, 'sym-pv-groups')[0].scrollLeft, 120);
+  assert.equal(PV.getSelected('symbols'), 2);
+});
+
+test('符号格子与分组高亮跟随当前主题间距、圆角和颜色，关闭边框后格子透明', () => {
+  const { PV, doc } = load();
+  const out = PV.render(host(doc), opts({ keyHGap: 4, keyVGap: 5, keyRadius: 20 }));
+  assert.equal(out.cells[0].style.height, '30px');
+  assert.equal(out.cells[0].style.flex, `0 0 calc(${100 / 6}% - 8px)`);
+  assert.equal(out.cells[0].style.borderRadius, '20px');
+  assert.equal(out.cells[0].style.color, 'rgb(241, 222, 220)', '使用 keyTextColor，不能使用候选文字色');
+  const selectedFill = findAll(out.panel, 'sym-pv-group-fill')[0];
+  assert.equal(selectedFill.style.inset, '5px 4px');
+  assert.equal(selectedFill.style.background, 'rgb(255, 180, 168)');
+  const noBorder = PV.render(host(doc), opts({ borderEnabled: false, strokeEnabled: () => false }));
+  assert.equal(noBorder.cells[0].style.background, undefined);
+  assert.equal(noBorder.cells[0].style.border, undefined);
+  assert.equal(findAll(noBorder.panel, 'sym-pv-group-fill')[0].style.background, 'rgb(255, 180, 168)',
+    '当前分组保持选中背景，不受普通按键边框开关影响');
 });

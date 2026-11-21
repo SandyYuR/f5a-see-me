@@ -11,7 +11,7 @@
  *   · 空 names / 空 symbols 的组会被 App **整组静默丢弃** → 校验器报警;
  *   · 当前 App 按类别固定列数：颜文字 1 列，符号/Emoji 6 列；条目均单行等比缩小。
  *     multiLine 只保留旧版兼容数据；多列中的长条目可读性较差，校验器给 warn;
- *   · 旧格式兼容:顶层直接是数组时按 {multiLine:false, groups:[...]} 处理;
+ *   · 旧格式兼容:编辑器把顶层数组转换为带组名的标准对象,App 本身只读取对象;
  *   · 三类是**独立文件**,彼此不共用 multiLine。
  *
  * 与 foxy 版的差异(有意为之):
@@ -175,36 +175,36 @@
    *      · V === 'zh' 且标签 ∈ {zh-TW, zh-HK, zh-MO} 且存在 zh-Hant → zh-Hant;
    *      · 否则 names[V];
    *   3. V === 'zh' 仍未命中 → 再试 names['zh-Hant'];
-   *   4. 兜底:names 里的第一个非空值(依赖解析保序)。 */
+   *   4. 兜底:names 里的第一个值(依赖解析保序,空字符串也是真实组名)。 */
   SP.groupLabel = function (group, lang) {
     var names = (group && SP.isPlainObject(group.names)) ? group.names : {};
     var keys = Object.keys(names);
     function get(k) {
       var v = k == null ? null : names[k];
-      return (typeof v === 'string' && v !== '') ? v : null;
+      return typeof v === 'string' ? v : null;
     }
     function first() {
       for (var i = 0; i < keys.length; i++) {
         var v = names[keys[i]];
-        if (typeof v === 'string' && v !== '') return v;
+        if (typeof v === 'string') return v;
       }
       return '';
     }
     var tag = (lang == null || lang === '') ? '' : String(lang);
     if (tag) {
       var exact = get(tag);
-      if (exact) return exact;
+      if (exact !== null) return exact;
       var v = tag.split('-')[0];
       if (v) {
         if (v === 'zh' && ['zh-TW', 'zh-HK', 'zh-MO'].indexOf(tag) >= 0) {
           var hant = get('zh-Hant');
-          if (hant) return hant;
+          if (hant !== null) return hant;
         }
         var main = get(v);
-        if (main) return main;
+        if (main !== null) return main;
         if (v === 'zh') {
           var hant2 = get('zh-Hant');
-          if (hant2) return hant2;
+          if (hant2 !== null) return hant2;
         }
       }
     }
@@ -218,7 +218,7 @@
   SP.validateProfile = function (kind, p) {
     var errors = [], warnings = [];
     if (Array.isArray(p)) {
-      warnings.push('顶层是数组(旧格式):App 端会把 multiLine 强制当作 false 处理');
+      warnings.push('顶层是数组(旧格式):请先在编辑器中转换为带组名的标准对象再导入 App');
     } else if (!SP.isPlainObject(p)) {
       errors.push('符号数据必须是 JSON 对象(旧格式也接受顶层数组)');
       return { errors: errors, warnings: warnings };
@@ -229,10 +229,13 @@
       return { errors: errors, warnings: warnings };
     }
     if (!groups.length) {
-      errors.push('groups 必须是非空数组(空文件在 App 端会抛 empty catalog)');
+      errors.push('groups 必须是非空数组(空的自备目录会在 App 中回退到内置)');
       return { errors: errors, warnings: warnings };
     }
     var singleColumn = kind === 'kaomoji';
+    if (!Array.isArray(p) && Object.prototype.hasOwnProperty.call(p, 'multiLine') && typeof p.multiLine !== 'boolean') {
+      errors.push('multiLine 必须是 true 或 false');
+    }
 
     var dropped = [], missingZh = [], badNames = [], badSymbols = [], nonString = 0;
     var multi = 0, multiSample = '';
@@ -240,15 +243,18 @@
     groups.forEach(function (g, i) {
       var where = '第 ' + (i + 1) + ' 组';
       if (!SP.isPlainObject(g)) { errors.push(where + ' 不是对象'); return; }
-      if (g.names != null && !SP.isPlainObject(g.names)) badNames.push(where);
-      if (g.symbols != null && !Array.isArray(g.symbols)) badSymbols.push(where);
+      if (Object.prototype.hasOwnProperty.call(g, 'names') && !SP.isPlainObject(g.names)) badNames.push(where);
+      if (Object.prototype.hasOwnProperty.call(g, 'symbols') && !Array.isArray(g.symbols)) badSymbols.push(where);
       var names = SP.isPlainObject(g.names) ? g.names : {};
       var symbols = Array.isArray(g.symbols) ? g.symbols : [];
+      if (Object.keys(names).some(function (k) { return typeof names[k] !== 'string'; })) {
+        errors.push(where + ' 的 names 值必须是字符串');
+      }
+      symbols.forEach(function (s) { if (typeof s !== 'string') nonString++; });
       if (!Object.keys(names).length || !symbols.length) { dropped.push(where); return; }
       if (!names.zh) missingZh.push(where);
       totalEntries += symbols.length;
       symbols.forEach(function (s) {
-        if (typeof s !== 'string') nonString++;
         if (singleColumn) return;
         if (SP.graphemeCount(s) > 1) {
           multi++;
@@ -261,7 +267,7 @@
     if (badSymbols.length) errors.push(badSymbols.join('、') + ' 的 symbols 不是数组');
     if (dropped.length) warnings.push(dropped.join('、') + ' 的 names 或 symbols 为空 —— App 端会整组静默丢弃');
     if (missingZh.length) warnings.push(missingZh.join('、') + ' 缺少 zh 组名(App 会走回退链取第一个可用的名字)');
-    if (nonString) warnings.push(nonString + ' 个条目不是字符串(已按字符串处理)');
+    if (nonString) errors.push(nonString + ' 个条目不是字符串,请改为带双引号的文本');
     /* 只有多字符条目占了相当比例(>25%)才提示使用颜文字面板:少量多字符条目
      * (拼音、国际音标)是这类目录的常态,全部报警等于没报。 */
     if (multi && multi / Math.max(1, totalEntries) > 0.25) {
@@ -348,8 +354,22 @@
     } catch (e) {
       return { ok: false, error: (fileName ? fileName + ':' : '') + 'JSON 解析失败 —— ' + e.message };
     }
-    var profile = SP.normalizeProfile(kind, parsed);
-    return { ok: true, profile: profile, legacy: Array.isArray(parsed) };
+    var legacy = Array.isArray(parsed);
+    var profile;
+    if (legacy) {
+      // App 的 SymbolCatalogFile 不接受顶层数组。转换旧文件时补齐组名,
+      // 否则导出的每一组都会因 names 为空被 App 丢弃。
+      profile = SP.normalizeProfile(kind, parsed);
+      profile.groups.forEach(function (g, i) {
+        if (!Object.keys(g.names).length) g.names.zh = '导入分组 ' + (i + 1);
+      });
+    }
+    var report = SP.validateProfile(kind, legacy ? profile : parsed);
+    if (report.errors.length) {
+      return { ok: false, error: (fileName ? fileName + ':' : '') + report.errors[0], report: report };
+    }
+    if (!profile) profile = SP.normalizeProfile(kind, parsed);
+    return { ok: true, profile: profile, legacy: legacy, report: report };
   };
 
   /* ================================================================
@@ -364,7 +384,51 @@
     filter: '',
     openGroups: {},      /* 展开态,键是「类别:显示名」 */
     selectedEntry: null, /* { kind, gi, ei } —— 选中后「插入选中项」用它 */
+    jsonDrafts: {},      /* kind -> 尚未应用的 JSON 文本;切页与切类别保留 */
     dirty: false
+  };
+  var changeListener = null;
+  function notifyChange() { if (changeListener) changeListener(); }
+  SP.setChangeListener = function (callback) { changeListener = typeof callback === 'function' ? callback : null; };
+
+  SP.snapshot = function () {
+    var profiles = {};
+    var sources = {};
+    Object.keys(state.profiles).forEach(function (kind) {
+      if (state.sources[kind] !== 'builtin') {
+        profiles[kind] = state.profiles[kind];
+        sources[kind] = state.sources[kind];
+      }
+    });
+    return JSON.parse(JSON.stringify({ kind: state.kind, profiles: profiles,
+      fileNames: state.fileNames, sources: sources, jsonDrafts: state.jsonDrafts }));
+  };
+
+  SP.restore = function (snapshot) {
+    if (!SP.isPlainObject(snapshot)) return false;
+    state.kind = SP.kindMeta(snapshot.kind).id;
+    state.profiles = {};
+    state.fileNames = {};
+    state.sources = {};
+    state.jsonDrafts = {};
+    SP.KINDS.forEach(function (meta) {
+      var kind = meta.id;
+      if (snapshot.profiles && SP.isPlainObject(snapshot.profiles[kind])) {
+        state.profiles[kind] = SP.normalizeProfile(kind, snapshot.profiles[kind]);
+        state.sources[kind] = snapshot.sources && snapshot.sources[kind] || 'file';
+      } else if (snapshot.sources && snapshot.sources[kind] === 'builtin') {
+        state.profiles[kind] = SP.normalizeProfile(kind, builtinProfile(kind));
+        state.sources[kind] = 'builtin';
+      }
+      if (snapshot.fileNames && typeof snapshot.fileNames[kind] === 'string') state.fileNames[kind] = snapshot.fileNames[kind];
+      if (snapshot.jsonDrafts && typeof snapshot.jsonDrafts[kind] === 'string') state.jsonDrafts[kind] = snapshot.jsonDrafts[kind];
+    });
+    state.selectedEntry = null;
+    state.filter = '';
+    state.openGroups = {};
+    state.dirty = false;
+    SP.render();
+    return true;
   };
 
   function profile() {
@@ -392,7 +456,9 @@
     state.profiles[meta.id] = SP.normalizeProfile(meta.id, data);
     state.sources[meta.id] = 'builtin';
     delete state.fileNames[meta.id];
+    delete state.jsonDrafts[meta.id];
     state.dirty = false;
+    notifyChange();
     return state.profiles[meta.id];
   };
 
@@ -456,7 +522,7 @@
       var meta = SP.kindMeta(state.kind);
       var from = state.sources[state.kind] || 'builtin';
       var label = from === 'builtin' ? '来自输入法内置资源'
-        : from === 'sample' ? '内置样例(不是 app 数据)' : '来自导入文件';
+        : from === 'sample' ? '内置样例(不是 app 数据)' : from === 'edited' ? '自定义编辑' : '来自导入文件';
       var name = state.fileNames[state.kind] || meta.file;
       src.textContent = `${meta.label} · ${label} · ${name}`;
     }
@@ -467,9 +533,9 @@
     if (!host) return;
     var meta = SP.kindMeta(state.kind);
     host.innerHTML =
-      '<div>编辑完成后点「导出 JSON」,把文件放进 app 的符号目录 ' +
-      '<code>Android/data/org.fcitx.fcitx5.android.fx.rime/files/symbols/' + escapeHtml(meta.dir) + '/&lt;名&gt;.json</code>' +
-      '(外部存储根下按 app 实际包名对应),再到「设置 → 符号面板」里选中该文件才生效。</div>' +
+      '<div>编辑完成后点「导出 JSON」,把文件放进输入法用户文件夹的 ' +
+      '<code>config/symbol_catalogs/' + escapeHtml(meta.dir) + '/&lt;名&gt;.json</code>' +
+      ',再到「设置 → 表情和符号」里选中该文件才生效。用户文件夹位于 <code>Android/data/&lt;实际包名&gt;/files/</code>。</div>' +
       '<div>⚠️ 内置符号走 APK assets:放一份同名文件<strong>不会</strong>自动覆盖内置,必须显式选中。</div>' +
       '<div>' + escapeHtml(meta.desc) + ';顶层只有 <code>multiLine</code> 与 <code>groups</code> 两个键,<strong>没有 type 字段</strong>。</div>';
   }
@@ -532,12 +598,13 @@
     var names = SP.isPlainObject(g.names) ? g.names : {};
     var symbols = Array.isArray(g.symbols) ? g.symbols : [];
     var entryHtml = symbols.map(function (s, ei) {
-      return `<button type="button" class="sym-entry" data-gi="${gi}" data-ei="${ei}" title="${escapeHtml(s)}">${escapeHtml(s)}</button>`;
+      var selected = state.selectedEntry && state.selectedEntry.kind === state.kind && state.selectedEntry.gi === gi && state.selectedEntry.ei === ei;
+      return `<button type="button" class="sym-entry${selected ? ' selected' : ''}" data-gi="${gi}" data-ei="${ei}" title="${escapeHtml(s)}">${escapeHtml(s)}</button>`;
     }).join("");
     return `
       <div class="form-row form-inline">
         <label>组名 zh</label>
-        <input class="mini-input" data-sym-name="zh" data-gi="${gi}" value="${escapeHtml(names.zh || '')}" placeholder="必填">
+        <input class="mini-input" data-sym-name="zh" data-gi="${gi}" value="${escapeHtml(names.zh || '')}" placeholder="至少填写一种语言">
         <label>zh-Hant</label>
         <input class="mini-input" data-sym-name="zh-Hant" data-gi="${gi}" value="${escapeHtml(names['zh-Hant'] || '')}" placeholder="可选">
         <label>en</label>
@@ -545,7 +612,7 @@
       </div>
       <div class="sym-entry-grid${state.kind === 'kaomoji' ? ' multi-line' : ''}">${entryHtml || '<span class="status">(空分组,会被 App 丢弃)</span>'}</div>
       <div class="toolbar sym-group-toolbar">
-        <input class="mini-input" data-sym-new-entry="${gi}" placeholder="新增条目(可含多个词,按空格拆)">
+        <input class="mini-input" data-sym-new-entry="${gi}" placeholder="${state.kind === 'kaomoji' ? '新增完整颜文字(保留空格)' : '新增条目(按空格拆分)'}">
         <button type="button" class="mini-button" data-sym-add-entry="${gi}">添加到末尾</button>
         <button type="button" class="mini-button danger" data-sym-del-group="${gi}">删除本组</button>
       </div>
@@ -569,11 +636,18 @@
         var gi = Number(input.dataset.gi);
         var g = profile().groups[gi];
         if (!g) return;
+        var previousName = SP.groupDisplayNames(profile().groups)[gi];
+        var wasOpen = !!state.openGroups[groupKey(previousName)];
         var lang = input.dataset.symName;
         var value = input.value.trim();
         if (!g.names) g.names = {};
         if (value) g.names[lang] = value;
         else delete g.names[lang];
+        var nextName = SP.groupDisplayNames(profile().groups)[gi];
+        if (previousName !== nextName && wasOpen) {
+          delete state.openGroups[groupKey(previousName)];
+          state.openGroups[groupKey(nextName)] = true;
+        }
         markDirty(`已更新第 ${gi + 1} 组组名`);
         SP.render();
       });
@@ -583,7 +657,9 @@
         var gi = Number(btn.dataset.symAddEntry);
         var input = host.querySelector(`input[data-sym-new-entry="${gi}"]`);
         var raw = input ? input.value : '';
-        var parts = String(raw || '').split(/\s+/).filter(Boolean);
+        var parts = state.kind === 'kaomoji'
+          ? [String(raw || '')].filter(function (s) { return s.trim().length; })
+          : String(raw || '').split(/\s+/).filter(Boolean);
         if (!parts.length) { setStatus('symbol-panel-status', '请先输入要新增的条目', 'err'); return; }
         var g = profile().groups[gi];
         if (!g) return;
@@ -601,6 +677,10 @@
         var dn = SP.groupDisplayNames(profile().groups)[gi];
         if (typeof confirm === 'function' && !confirm(`删除分组「${dn}」及其 ${(g.symbols || []).length} 个条目?`)) return;
         profile().groups.splice(gi, 1);
+        if (state.selectedEntry && state.selectedEntry.kind === state.kind) {
+          if (state.selectedEntry.gi === gi) state.selectedEntry = null;
+          else if (state.selectedEntry.gi > gi) state.selectedEntry.gi--;
+        }
         delete state.openGroups[groupKey(dn)];
         markDirty(`已删除分组「${dn}」`);
         SP.render();
@@ -668,8 +748,8 @@
       var current = list[ei];
       var next = typeof prompt === 'function' ? prompt('修改条目', current) : null;
       if (next == null) return;
-      if (!String(next).trim()) { setStatus('symbol-panel-status', '条目不能为空(空条目会被 App 丢弃)', 'err'); return; }
-      list[ei] = String(next).trim();
+      if (!String(next).trim()) { setStatus('symbol-panel-status', '请输入条目内容', 'err'); return; }
+      list[ei] = String(next);
       markDirty('已修改条目');
     } else if (op === 'del') {
       list.splice(ei, 1);
@@ -681,12 +761,15 @@
 
   function markDirty(msg) {
     state.dirty = true;
+    if (state.sources[state.kind] === 'builtin') state.sources[state.kind] = 'edited';
     setStatus('symbol-panel-status', msg || '已修改', 'ok');
+    notifyChange();
   }
 
   /* ---- JSON 卡片 ---- */
 
   SP.currentJsonText = function () {
+    if (Object.prototype.hasOwnProperty.call(state.jsonDrafts, state.kind)) return state.jsonDrafts[state.kind];
     return SP.serializeProfile(profile()) + '\n';
   };
 
@@ -694,7 +777,9 @@
     var ta = $('sym-json');
     if (!ta) return;
     ta.value = SP.currentJsonText();
-    renderIssues(SP.validateProfile(state.kind, profile()));
+    var draft = Object.prototype.hasOwnProperty.call(state.jsonDrafts, state.kind);
+    renderIssues(SP.validateProfile(state.kind, draft ? safeParse(ta.value) : profile()));
+    if (draft) setStatus('sym-json-status', 'JSON 草稿尚未应用,点击「应用 JSON」后生效', '');
   }
 
   function renderIssues(report) {
@@ -728,9 +813,11 @@
       return { ok: false, error: report.errors[0], report: report };
     }
     state.profiles[state.kind] = loaded.profile;
+    delete state.jsonDrafts[state.kind];
     state.sources[state.kind] = 'file';
     state.selectedEntry = null;
     state.dirty = true;
+    notifyChange();
     setStatus('sym-json-status', '已应用到当前类别', 'ok');
     SP.render();
     return { ok: true, report: report };
@@ -744,6 +831,10 @@
   };
 
   SP.exportJson = function () {
+    if (Object.prototype.hasOwnProperty.call(state.jsonDrafts, state.kind)) {
+      setStatus('symbol-panel-status', 'JSON 草稿尚未应用,请先点击「应用 JSON」再导出', 'err');
+      return null;
+    }
     var text = SP.serializeProfile(profile()) + '\n';
     if (typeof document === 'undefined') return text;
     var blob = new Blob([text], { type: 'application/json;charset=utf-8' });
@@ -765,10 +856,12 @@
     }
     var report = SP.validateProfile(state.kind, loaded.profile);
     state.profiles[state.kind] = loaded.profile;
+    delete state.jsonDrafts[state.kind];
     state.sources[state.kind] = 'file';
     state.fileNames[state.kind] = fileName || SP.kindMeta(state.kind).file;
     state.selectedEntry = null;
     state.dirty = true;
+    notifyChange();
     SP.render();
     if (report.errors.length) {
       setStatus('symbol-panel-status', `已导入但结构有错:${report.errors[0]}`, 'err');
@@ -797,6 +890,7 @@
         profile();
         setStatus('symbol-panel-status', `已切到「${SP.kindMeta(state.kind).label}」`, '');
         SP.render();
+        notifyChange();
       });
     }
 
@@ -862,10 +956,12 @@
         var meta = SP.kindMeta(state.kind);
         var sample = SP.SAMPLES[meta.id];
         state.profiles[state.kind] = SP.normalizeProfile(state.kind, sample);
+        delete state.jsonDrafts[state.kind];
         state.sources[state.kind] = 'sample';
         delete state.fileNames[state.kind];
         state.selectedEntry = null;
         state.dirty = true;
+        notifyChange();
         SP.render();
         setStatus('symbol-panel-status', '已载入内置样例(不是 app 数据)', 'ok');
       });
@@ -888,7 +984,8 @@
     var checkBtn = $('sym-json-check');
     if (checkBtn) {
       checkBtn.addEventListener('click', function () {
-        var report = SP.validateProfile(state.kind, profile());
+        var ta = $('sym-json');
+        var report = SP.validateProfile(state.kind, ta ? safeParse(ta.value) : profile());
         renderIssues(report);
         var total = report.errors.length + report.warnings.length;
         setStatus('sym-json-status', total ? `发现 ${report.errors.length} 个错误、${report.warnings.length} 条提醒` : '结构正常', total ? 'err' : 'ok');
@@ -920,8 +1017,12 @@
     var ta = $('sym-json');
     if (ta) {
       ta.addEventListener('input', function () {
+        state.jsonDrafts[state.kind] = ta.value;
+        state.dirty = true;
+        setStatus('sym-json-status', 'JSON 草稿尚未应用,点击「应用 JSON」后生效', '');
         var report = SP.validateProfile(state.kind, safeParse(ta.value));
         renderIssues(report);
+        notifyChange();
       });
     }
 
